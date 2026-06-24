@@ -1,0 +1,17 @@
+{
+  "name": "LIFTIQ — Squat Tracker",
+  "short_name": "LIFTIQ",
+  "description": "파워리프팅 스쿼트 바이오메카닉스 트래커",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%230a0a0a'/><text x='16' y='140' font-family='Arial Black' font-weight='900' font-size='90' fill='%23e8ff47'>LQ</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
