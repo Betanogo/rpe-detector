@@ -128,6 +128,63 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:8px 14px;cursor:pointer;transition:background .15s,color .15s;}
 .unit-seg-btn.active{background:var(--acc);color:#000;font-weight:700;}
 
+/* ── RECORD BUTTON ── */
+#btn-record{
+  position:absolute;bottom:14px;right:14px;
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(13,13,13,0.75);border:2px solid var(--border);
+  color:var(--text2);font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(6px);transition:all .2s;z-index:3;
+}
+#btn-record.recording{background:var(--danger);border-color:var(--danger);color:#fff;animation:recPulse 1s ease-in-out infinite;}
+@keyframes recPulse{0%,100%{opacity:1}50%{opacity:.6}}
+#btn-cam-off{
+  position:absolute;bottom:14px;left:14px;
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(13,13,13,0.75);border:2px solid var(--border);
+  color:var(--text2);font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(6px);transition:all .2s;z-index:3;
+}
+#btn-cam-off.off{background:var(--s3);border-color:var(--text3);color:var(--text3);}
+.cam-off-screen{
+  position:absolute;inset:0;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;z-index:2;display:none;
+}
+.cam-off-screen.visible{display:flex;}
+.cam-off-screen .icon{font-size:40px;opacity:.3;}
+.cam-off-screen .label{font-size:12px;color:var(--text3);}
+
+/* ── SET ANALYZER FULLSCREEN ── */
+#analyzer-overlay{
+  position:fixed;inset:0;background:var(--bg);z-index:500;
+  display:flex;flex-direction:column;
+  transform:translateY(100%);transition:transform .35s cubic-bezier(0.16,1,0.3,1);
+}
+#analyzer-overlay.open{transform:translateY(0);}
+#analyzer-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px;border-bottom:1px solid var(--border);
+  background:var(--s1);flex-shrink:0;
+}
+#analyzer-title{font-family:var(--fm);font-size:15px;font-weight:700;color:var(--text);}
+#analyzer-close{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+#analyzer-body{flex:1;overflow-y:auto;padding:16px;}
+
+/* ── EXPAND BTN ── */
+#btn-expand{
+  position:absolute;top:8px;right:8px;
+  width:26px;height:26px;border-radius:6px;
+  border:1px solid var(--border);background:var(--s3);
+  color:var(--text3);font-size:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:color .15s;
+}
+#btn-expand:hover{color:var(--acc);}
+.tab-wrap{position:relative;}
+
 /* ── TOAST ── */
 #toast{position:fixed;bottom:calc(20px + var(--sb));left:50%;transform:translateX(-50%) translateY(30px);background:var(--s3);color:var(--text);font-size:11px;font-weight:500;padding:8px 16px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:200;}
 #toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
@@ -169,6 +226,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   <div id="camera-wrap">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="overlay"></canvas>
+    <!-- Camera off screen -->
+    <div class="cam-off-screen" id="cam-off-screen">
+      <div class="icon">📷</div>
+      <div class="label">Camera is off</div>
+    </div>
     <div id="phase-badge">Ready</div>
     <div id="track-chip">
       <div class="tv" id="track-point-label">HEAD</div>
@@ -178,6 +240,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <div id="countdown-num">4</div>
       <div id="countdown-label">Get into position…</div>
     </div>
+    <!-- Camera controls -->
+    <button id="btn-cam-off" title="Toggle camera">📷</button>
+    <button id="btn-record" title="Record video">⏺</button>
   </div>
 
   <!-- Panel -->
@@ -212,9 +277,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
     </div>
 
     <!-- Tabs -->
-    <div id="tabs">
-      <button class="tab-btn active" data-tab="current">This Set</button>
-      <button class="tab-btn" data-tab="sets">All Sets</button>
+    <div class="tab-wrap">
+      <div id="tabs">
+        <button class="tab-btn active" data-tab="current">This Set</button>
+        <button class="tab-btn" data-tab="sets">All Sets</button>
+      </div>
+      <button id="btn-expand" title="Expand">⤢</button>
     </div>
 
     <div id="tab-current" class="visible">
@@ -244,6 +312,43 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   </section>
 </div>
 
+<!-- Set Analyzer Fullscreen -->
+<div id="analyzer-overlay">
+  <div id="analyzer-header">
+    <div id="analyzer-title">Set Analyzer</div>
+    <button id="analyzer-close">✕</button>
+  </div>
+  <div id="analyzer-body">
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Current Set</div>
+      <div id="analyzer-metrics" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
+      <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Rep by Rep</div>
+      <table style="width:100%;border-collapse:collapse;font-family:var(--fm);font-size:12px;">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">Rep</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">Time</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">V-Loss</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">RPE</th>
+        </tr></thead>
+        <tbody id="analyzer-reps"></tbody>
+      </table>
+    </div>
+    <div>
+      <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">All Sets This Session</div>
+      <table style="width:100%;border-collapse:collapse;font-family:var(--fm);font-size:12px;">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Set</th>
+          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Exercise</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Reps</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">RPE</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Weight</th>
+        </tr></thead>
+        <tbody id="analyzer-sets"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { PoseLandmarker, FilesetResolver, DrawingUtils }
   from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm';
@@ -269,12 +374,16 @@ const EX_CONFIG = {
 
 // RPE table
 const RPE_TABLE = [
-  {loss:0,  rpe:6.0, label:'Very Easy'},
-  {loss:5,  rpe:6.5, label:'Easy'},
-  {loss:10, rpe:7.0, label:'Moderate'},
-  {loss:15, rpe:7.5, label:'Somewhat Hard'},
-  {loss:20, rpe:8.0, label:'Hard'},
-  {loss:25, rpe:8.5, label:'Very Hard'},
+  {loss:0,  rpe:4.0, label:'Warm-up'},
+  {loss:2,  rpe:4.5, label:'Very Light'},
+  {loss:4,  rpe:5.0, label:'Light'},
+  {loss:6,  rpe:5.5, label:'Light-Moderate'},
+  {loss:8,  rpe:6.0, label:'Moderate'},
+  {loss:10, rpe:6.5, label:'Moderate+'},
+  {loss:13, rpe:7.0, label:'Somewhat Hard'},
+  {loss:16, rpe:7.5, label:'Hard'},
+  {loss:20, rpe:8.0, label:'Very Hard'},
+  {loss:25, rpe:8.5, label:'Very Hard+'},
   {loss:30, rpe:9.0, label:'Near Max'},
   {loss:40, rpe:9.5, label:'Almost Max'},
   {loss:50, rpe:10,  label:'Max'},
@@ -587,7 +696,7 @@ function updateMetrics(rep,history){
   const mean=history.reduce((s,r)=>s+r.concentricDuration,0)/history.length;
   mMean.textContent=mean.toFixed(2);
   mVloss.className='metric-val '+(rep.velocityLoss>=25?'danger':rep.velocityLoss>=10?'':'teal');
-  const pct=Math.min(100,((rep.rpe-6)/4)*100);
+  const pct=Math.min(100,((rep.rpe-4)/6)*100);
   rpeFill.style.width=pct+'%';
   rpeFill.style.background=rep.rpe>=9?'#e05555':rep.rpe>=8?'#ffc107':'var(--acc)';
   rpeVal.textContent=rep.rpe;
@@ -725,6 +834,110 @@ function showToast(msg){
   clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2500);
 }
 function setStatus(msg){loadStatus.textContent=msg;}
+
+// ── Record ───────────────────────────────────────────────
+let mediaRecorder=null,recordedChunks=[],isRecording=false,camOn=true;
+const btnRecord=$('#btn-record');
+const btnCamOff=$('#btn-cam-off');
+const camOffScreen=$('#cam-off-screen');
+
+btnRecord.addEventListener('click',()=>{
+  if(!stream)return;
+  if(!isRecording){
+    recordedChunks=[];
+    const opts={mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'};
+    try{
+      mediaRecorder=new MediaRecorder(stream,opts);
+      mediaRecorder.ondataavailable=e=>{if(e.data.size>0)recordedChunks.push(e.data);};
+      mediaRecorder.onstop=()=>{
+        const blob=new Blob(recordedChunks,{type:'video/webm'});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');
+        a.href=url;
+        a.download='tatelift_'+EX_CONFIG[currentExercise].label+'_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.webm';
+        a.click();URL.revokeObjectURL(url);
+        showToast('Video saved to Downloads!');
+      };
+      mediaRecorder.start();
+      isRecording=true;
+      btnRecord.classList.add('recording');
+      btnRecord.textContent='⏹';
+      showToast('Recording…');
+    }catch(e){showToast('Recording not supported on this browser');}
+  }else{
+    mediaRecorder?.stop();
+    isRecording=false;
+    btnRecord.classList.remove('recording');
+    btnRecord.textContent='⏺';
+  }
+});
+
+btnCamOff.addEventListener('click',()=>{
+  camOn=!camOn;
+  if(camOn){
+    video.play();
+    camOffScreen.classList.remove('visible');
+    btnCamOff.classList.remove('off');
+    canvas.style.display='';
+  }else{
+    video.pause();
+    camOffScreen.classList.add('visible');
+    btnCamOff.classList.add('off');
+    canvas.style.display='none';
+    if(tracking){tracking=false;cancelAnimationFrame(rafId);btnStart.textContent='▶ Start Set';}
+  }
+});
+
+// ── Set Analyzer Fullscreen ───────────────────────────────
+const analyzerOverlay=$('#analyzer-overlay');
+
+function openAnalyzer(){
+  const history=tracker.repHistory;
+  const mean=history.length?history.reduce((s,r)=>s+r.concentricDuration,0)/history.length:0;
+  const maxRpe=history.length?Math.max(...history.map(r=>r.rpe)):0;
+  const lastVloss=history.length?history[history.length-1].velocityLoss:0;
+  const amEl=$('#analyzer-metrics');
+  if(amEl){
+    amEl.innerHTML=[
+      {v:history.length,l:'Reps',c:'var(--acc)'},
+      {v:mean?mean.toFixed(2):'—',l:'Avg (s)',c:'var(--text)'},
+      {v:maxRpe||'—',l:'Peak RPE',c:maxRpe>=9?'var(--danger)':'var(--text)'},
+      {v:lastVloss?lastVloss.toFixed(1)+'%':'—',l:'V-Loss',c:'var(--teal)'},
+    ].map(m=>'<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:10px 6px;text-align:center">'
+      +'<div style="font-family:var(--fm);font-size:22px;font-weight:700;color:'+m.c+'">'+m.v+'</div>'
+      +'<div style="font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px">'+m.l+'</div>'
+      +'</div>').join('');
+  }
+  const arEl=$('#analyzer-reps');
+  if(arEl){
+    arEl.innerHTML=[...history].reverse().map(r=>{
+      const cls=r.rpe>=9?'rpe-high':r.rpe>=8?'rpe-med':'rpe-ok';
+      return '<tr>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Rep '+r.repNumber+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+r.concentricDuration.toFixed(3)+'s</td>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+r.velocityLoss.toFixed(1)+'%</td>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="'+cls+'">'+r.rpe+'</td>'
+        +'</tr>';
+    }).join('');
+  }
+  const asEl=$('#analyzer-sets');
+  if(asEl){
+    asEl.innerHTML=setHistory.map(s=>{
+      const cls=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
+      return '<tr>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Set '+s.setNum+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border)">'+s.exercise+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+s.reps+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="'+cls+'">'+s.maxRpe+'</td>'
+        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+s.weight+'</td>'
+        +'</tr>';
+    }).join('');
+  }
+  analyzerOverlay.classList.add('open');
+}
+
+$('#btn-expand').addEventListener('click',openAnalyzer);
+$('#analyzer-close').addEventListener('click',()=>analyzerOverlay.classList.remove('open'));
 
 // ── Boot ──────────────────────────────────────────────────
 initMP();
