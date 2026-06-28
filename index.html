@@ -1,234 +1,211 @@
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#0a0a0a" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<title>LIFTIQ — Squat Tracker</title>
-<link rel="manifest" href="manifest.json" />
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+<meta name="theme-color" content="#0d0d0d"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>TATELIFT — RPE Tracker</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --void:#0a0a0a;--surface:#111318;--raised:#1c1f27;--border:#2a2e3a;
-  --volt:#e8ff47;--danger:#ff3d3d;--teal:#00e5c8;--muted:#888ca0;--text:#e8eaf0;
-  --font-display:'Barlow Condensed',sans-serif;
-  --font-body:'Inter',sans-serif;
-  --font-mono:'JetBrains Mono',monospace;
-  --safe-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#0d0d0d;--s1:#141414;--s2:#1c1c1c;--s3:#242424;--s4:#2e2e2e;
+  --border:rgba(255,255,255,0.08);--text:#f0f0f0;--text2:#a0a0a0;--text3:#505050;
+  --acc:#e06c00;--acc-dim:rgba(224,108,0,0.14);
+  --danger:#e05555;--green:#4caf7d;--teal:#00e5c8;
+  --fb:'Space Grotesk',sans-serif;--fm:'Space Mono',monospace;
+  --sb:env(safe-area-inset-bottom,0px);
 }
-html,body{height:100%;background:var(--void);color:var(--text);font-family:var(--font-body);overflow:hidden;-webkit-font-smoothing:antialiased}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--fb);overflow:hidden;-webkit-font-smoothing:antialiased;}
 
-/* ── Shell ── */
-#app{display:grid;grid-template-rows:48px 1fr auto;height:100dvh;max-width:480px;margin:0 auto;position:relative}
+/* ── SHELL ── */
+#app{display:grid;grid-template-rows:auto 1fr auto;height:100dvh;max-width:480px;margin:0 auto;}
 
-/* ── Topbar ── */
-#topbar{display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--border);background:var(--surface);z-index:10;gap:8px}
-#logo{font-family:var(--font-display);font-weight:900;font-size:22px;letter-spacing:0.08em;color:var(--volt);flex-shrink:0}
-#logo span{color:var(--text)}
-.top-btn{background:var(--raised);border:1px solid var(--border);color:var(--muted);font-size:15px;height:32px;padding:0 10px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:5px;font-family:var(--font-body);font-size:12px;white-space:nowrap;transition:color .2s,border-color .2s}
-.top-btn:hover{color:var(--volt);border-color:var(--volt)}
-.top-btn.active{color:var(--volt);border-color:var(--volt)}
-#topbar-right{display:flex;gap:6px;align-items:center}
+/* ── TOP BAR ── */
+#topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg);}
+#nav-logo{font-family:var(--fm);font-size:16px;font-weight:700;color:var(--acc);cursor:pointer;flex-shrink:0;}
+#exercise-select{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fb);font-size:13px;font-weight:600;padding:7px 10px;outline:none;cursor:pointer;}
+#exercise-select option{background:var(--s2);}
+#cam-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,border-color .15s;flex-shrink:0;}
+#cam-btn:hover{color:var(--acc);border-color:var(--acc);}
 
-/* ── Camera ── */
-#camera-wrap{position:relative;background:#000;overflow:hidden}
-#video{width:100%;height:100%;object-fit:cover;display:block}
-#overlay{position:absolute;inset:0;pointer-events:none}
+/* ── CAMERA ── */
+#camera-wrap{position:relative;background:#000;overflow:hidden;}
+#video{width:100%;height:100%;object-fit:cover;display:block;}
+#overlay{position:absolute;inset:0;pointer-events:none;}
 
-/* ── Countdown overlay ── */
+/* ── PHASE BADGE ── */
+#phase-badge{
+  position:absolute;top:12px;left:50%;transform:translateX(-50%);
+  font-family:var(--fm);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  padding:5px 14px;border-radius:6px;
+  background:rgba(13,13,13,0.75);border:1px solid var(--border);
+  color:var(--text3);backdrop-filter:blur(6px);pointer-events:none;
+  transition:color .15s,border-color .15s;
+}
+#phase-badge.descending{color:#ffc107;border-color:#ffc107;}
+#phase-badge.bottom{color:var(--acc);border-color:var(--acc);}
+#phase-badge.ascending{color:var(--teal);border-color:var(--teal);}
+
+/* ── TRACKING CHIP ── */
+#track-chip{
+  position:absolute;top:12px;left:12px;
+  background:rgba(13,13,13,0.75);border:1px solid var(--border);
+  border-radius:6px;padding:5px 9px;backdrop-filter:blur(6px);pointer-events:none;
+}
+#track-chip .tv{font-family:var(--fm);font-size:12px;font-weight:700;color:var(--teal);}
+#track-chip .tl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:1px;}
+
+/* ── COUNTDOWN OVERLAY ── */
 #countdown-overlay{
   position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;
-  background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);
-  pointer-events:none;opacity:0;transition:opacity 0.3s;z-index:5;
+  background:rgba(0,0,0,.75);backdrop-filter:blur(4px);
+  pointer-events:none;opacity:0;transition:opacity .3s;z-index:5;
 }
-#countdown-overlay.visible{opacity:1}
-#countdown-num{
-  font-family:var(--font-display);font-weight:900;font-size:120px;
-  line-height:1;color:var(--volt);
-  text-shadow:0 0 40px rgba(232,255,71,0.4);
-  animation:pulse 1s ease-in-out infinite;
-}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-#countdown-label{font-family:var(--font-display);font-weight:600;font-size:18px;letter-spacing:0.15em;color:var(--text);margin-top:8px}
+#countdown-overlay.visible{opacity:1;}
+#countdown-num{font-family:var(--fm);font-weight:700;font-size:110px;line-height:1;color:var(--acc);animation:pulse 1s ease-in-out infinite;}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+#countdown-label{font-size:14px;color:var(--text2);margin-top:8px;letter-spacing:.1em;}
 
-/* ── Phase ribbon ── */
-#phase-ribbon{
-  position:absolute;top:12px;left:50%;transform:translateX(-50%);
-  font-family:var(--font-display);font-weight:700;font-size:13px;
-  letter-spacing:0.14em;text-transform:uppercase;
-  padding:5px 14px;border-radius:4px;
-  background:rgba(10,10,10,0.7);border:1px solid var(--border);color:var(--muted);
-  transition:color .15s,border-color .15s;backdrop-filter:blur(6px);pointer-events:none;
-}
-#phase-ribbon.phase-descending{color:#ffc107;border-color:#ffc107}
-#phase-ribbon.phase-depth{color:var(--volt);border-color:var(--volt)}
-#phase-ribbon.phase-ascending{color:var(--teal);border-color:var(--teal)}
+/* ── BOTTOM PANEL ── */
+#panel{background:var(--s1);border-top:1px solid var(--border);padding:12px 14px calc(12px + var(--sb));display:flex;flex-direction:column;gap:10px;}
 
-/* ── Knee chip ── */
-#knee-chip{
-  position:absolute;bottom:12px;left:12px;
-  background:rgba(10,10,10,0.72);border:1px solid var(--border);
-  border-radius:6px;padding:6px 10px;backdrop-filter:blur(6px);pointer-events:none;
-}
-#knee-chip .kval{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--teal)}
-#knee-chip .klabel{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-top:1px}
+/* ── METRICS ROW ── */
+#metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;}
+.metric{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:9px 6px 7px;text-align:center;}
+.metric-val{font-family:var(--fm);font-weight:700;font-size:24px;line-height:1;color:var(--text);}
+.metric-val.acc{color:var(--acc);}
+.metric-val.teal{color:var(--teal);}
+.metric-val.danger{color:var(--danger);}
+.metric-label{font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px;}
 
-/* ── Weight chip (camera overlay) ── */
-#weight-chip{
-  position:absolute;bottom:12px;right:12px;
-  background:rgba(10,10,10,0.72);border:1px solid var(--border);
-  border-radius:6px;padding:6px 10px;backdrop-filter:blur(6px);pointer-events:none;
-}
-#weight-chip .wval{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--volt)}
-#weight-chip .wlabel{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-top:1px}
+/* ── RPE BAR ── */
+#rpe-wrap{display:flex;flex-direction:column;gap:5px;}
+#rpe-header{display:flex;justify-content:space-between;align-items:baseline;}
+#rpe-label{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);}
+#rpe-right{display:flex;align-items:baseline;gap:8px;}
+#rpe-desc{font-size:11px;color:var(--text3);}
+#rpe-val{font-family:var(--fm);font-weight:700;font-size:20px;color:var(--acc);}
+#rpe-track{height:8px;background:var(--s3);border-radius:2px;overflow:hidden;position:relative;}
+#rpe-track::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0px,transparent 18px,rgba(0,0,0,.3) 18px,rgba(0,0,0,.3) 20px);}
+#rpe-fill{height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .6s cubic-bezier(0.16,1,0.3,1),background .4s;}
 
-/* ── Bottom panel ── */
-#panel{background:var(--surface);border-top:1px solid var(--border);padding:12px 14px calc(12px + var(--safe-bottom));display:flex;flex-direction:column;gap:10px}
+/* ── REP HISTORY ── */
+#history-wrap{max-height:100px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;scrollbar-width:thin;}
+#rep-table{width:100%;border-collapse:collapse;font-family:var(--fm);font-size:11px;}
+#rep-table thead th{position:sticky;top:0;background:var(--s2);color:var(--text3);font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-family:var(--fb);font-weight:600;padding:5px 7px;text-align:right;border-bottom:1px solid var(--border);}
+#rep-table thead th:first-child{text-align:left;}
+#rep-table tbody td{padding:4px 7px;text-align:right;color:var(--text);border-bottom:1px solid rgba(255,255,255,.04);}
+#rep-table tbody td:first-child{text-align:left;color:var(--text3);}
+.rpe-high{color:var(--danger)!important;}
+.rpe-med{color:#ffc107!important;}
+.rpe-ok{color:var(--teal)!important;}
 
-/* ── Weight row ── */
-#weight-row{display:flex;gap:8px;align-items:center}
-#weight-input{
-  flex:1;background:var(--raised);border:1px solid var(--border);
-  color:var(--text);font-family:var(--font-mono);font-size:16px;font-weight:600;
-  border-radius:7px;padding:8px 12px;outline:none;
-  transition:border-color .2s;
-}
-#weight-input:focus{border-color:var(--volt)}
-#weight-input::placeholder{color:var(--muted)}
-#unit-toggle{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
-.unit-btn{
-  background:var(--raised);color:var(--muted);border:none;
-  font-family:var(--font-display);font-weight:700;font-size:14px;
-  padding:8px 14px;cursor:pointer;transition:background .15s,color .15s;
-}
-.unit-btn.active{background:var(--volt);color:#000}
+/* ── TABS ── */
+#tabs{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.tab-btn{flex:1;background:var(--s2);color:var(--text3);border:none;font-family:var(--fb);font-size:11px;font-weight:500;padding:7px;cursor:pointer;transition:background .15s,color .15s;}
+.tab-btn.active{color:var(--acc);border-bottom:2px solid var(--acc);}
+#tab-current,#tab-sets{display:none;}
+#tab-current.visible,#tab-sets.visible{display:block;}
 
-/* ── Metrics ── */
-#metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
-.metric-card{background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:9px 6px 7px;text-align:center}
-.metric-val{font-family:var(--font-display);font-weight:700;font-size:26px;line-height:1;color:var(--text);letter-spacing:-0.01em}
-.metric-val.volt{color:var(--volt)}.metric-val.teal{color:var(--teal)}.metric-val.danger{color:var(--danger)}
-.metric-label{font-size:9px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+/* ── ACTIONS ── */
+#actions{display:grid;grid-template-columns:1fr auto auto;gap:8px;}
+#btn-start{background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--fm);font-size:14px;font-weight:700;padding:12px;cursor:pointer;transition:opacity .15s,transform .1s;}
+#btn-start:active{transform:scale(.97);opacity:.85;}
+#btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:12px 14px;cursor:pointer;transition:color .15s,border-color .15s;}
+#btn-reset:hover{color:var(--danger);border-color:var(--danger);}
+#btn-cam-flip{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:16px;padding:12px 14px;cursor:pointer;transition:color .15s;}
+#btn-cam-flip:hover{color:var(--acc);}
 
-/* ── RPE bar ── */
-#rpe-wrap{display:flex;flex-direction:column;gap:5px}
-#rpe-header{display:flex;justify-content:space-between;align-items:baseline}
-#rpe-label{font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted)}
-#rpe-value{font-family:var(--font-display);font-weight:900;font-size:20px;color:var(--volt)}
-#rpe-desc{font-size:11px;color:var(--muted)}
-#rpe-track{height:10px;background:var(--raised);border-radius:2px;overflow:hidden;position:relative}
-#rpe-track::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0px,transparent 18px,rgba(0,0,0,0.35) 18px,rgba(0,0,0,0.35) 20px);pointer-events:none}
-#rpe-fill{height:100%;width:0%;background:var(--volt);border-radius:2px;transition:width .6s cubic-bezier(0.16,1,0.3,1),background .4s}
+/* ── WEIGHT INPUT ── */
+#weight-row{display:flex;gap:8px;align-items:center;}
+#weight-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--fm);font-size:15px;font-weight:600;padding:8px 10px;outline:none;transition:border-color .2s;}
+#weight-in:focus{border-color:var(--acc);}
+#weight-in::placeholder{color:var(--text3);}
+.unit-seg{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:8px 14px;cursor:pointer;transition:background .15s,color .15s;}
+.unit-seg-btn.active{background:var(--acc);color:#000;font-weight:700;}
 
-/* ── Tabs ── */
-#tabs{display:flex;gap:0;border:1px solid var(--border);border-radius:7px;overflow:hidden}
-.tab-btn{flex:1;background:var(--raised);color:var(--muted);border:none;font-family:var(--font-body);font-size:12px;font-weight:500;padding:7px;cursor:pointer;transition:background .15s,color .15s}
-.tab-btn.active{background:var(--raised);color:var(--volt);border-bottom:2px solid var(--volt)}
+/* ── TOAST ── */
+#toast{position:fixed;bottom:calc(20px + var(--sb));left:50%;transform:translateX(-50%) translateY(30px);background:var(--s3);color:var(--text);font-size:11px;font-weight:500;padding:8px 16px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:200;}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
 
-/* ── Rep history ── */
-#tab-current,#tab-history{display:none}
-#tab-current.visible,#tab-history.visible{display:block}
-#history-wrap,#full-history-wrap{max-height:90px;overflow-y:auto;border-radius:6px;border:1px solid var(--border);scrollbar-width:thin;scrollbar-color:var(--border) transparent}
-#rep-table,#full-history-table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:11px}
-#rep-table thead th,#full-history-table thead th{position:sticky;top:0;background:var(--raised);color:var(--muted);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;font-family:var(--font-body);font-weight:600;padding:5px 7px;text-align:right;border-bottom:1px solid var(--border)}
-#rep-table thead th:first-child,#full-history-table thead th:first-child{text-align:left}
-#rep-table tbody td,#full-history-table tbody td{padding:4px 7px;text-align:right;color:var(--text);border-bottom:1px solid rgba(255,255,255,0.04)}
-#rep-table tbody td:first-child,#full-history-table tbody td:first-child{text-align:left;color:var(--muted)}
-.rpe-high{color:var(--danger)}.rpe-med{color:#ffc107}.rpe-ok{color:var(--teal)}
-
-/* ── Actions ── */
-#actions{display:grid;grid-template-columns:1fr auto;gap:8px}
-#btn-start{background:var(--volt);color:#000;border:none;border-radius:8px;font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:0.06em;padding:12px;cursor:pointer;transition:opacity .15s,transform .1s}
-#btn-start:active{transform:scale(0.98);opacity:0.85}
-#btn-start:disabled{opacity:0.5;cursor:not-allowed}
-#btn-reset{background:var(--raised);color:var(--muted);border:1px solid var(--border);border-radius:8px;font-family:var(--font-body);font-size:13px;padding:12px 14px;cursor:pointer;transition:color .15s,border-color .15s}
-#btn-reset:hover{color:var(--danger);border-color:var(--danger)}
-
-/* ── Loading ── */
-#loading-screen{position:fixed;inset:0;background:var(--void);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:100}
-#loading-logo{font-family:var(--font-display);font-weight:900;font-size:48px;letter-spacing:0.1em;color:var(--volt)}
-#loading-logo span{color:var(--text)}
-#loading-status{font-size:13px;color:var(--muted);font-family:var(--font-mono)}
-.spinner{width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--volt);border-radius:50%;animation:spin .8s linear infinite}
+/* ── LOADING ── */
+#loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:100;}
+.load-logo{font-family:var(--fm);font-weight:700;font-size:36px;color:var(--acc);}
+.spinner{width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* ── Toast ── */
-#toast{position:fixed;bottom:calc(20px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(60px);background:var(--raised);border:1px solid var(--border);color:var(--text);font-size:13px;padding:10px 18px;border-radius:8px;white-space:nowrap;transition:transform .3s cubic-bezier(0.16,1,0.3,1),opacity .3s;opacity:0;z-index:200;pointer-events:none}
-#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
-
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;transition-duration:0.01ms!important}}
+.load-status{font-size:12px;color:var(--text3);font-family:var(--fm);}
 </style>
 </head>
 <body>
 
 <div id="loading-screen">
-  <div id="loading-logo">LIFT<span>IQ</span></div>
+  <div class="load-logo">TATELIFT</div>
   <div class="spinner"></div>
-  <div id="loading-status">MediaPipe 로딩 중…</div>
+  <div class="load-status" id="load-status">Loading MediaPipe…</div>
 </div>
 
 <div id="toast"></div>
 
 <div id="app">
+  <!-- Topbar -->
   <header id="topbar">
-    <div id="logo">LIFT<span>IQ</span></div>
-    <div id="topbar-right">
-      <button class="top-btn" id="btn-cam-front" title="전면 카메라">🤳 전면</button>
-      <button class="top-btn" id="btn-cam-rear" title="후면 카메라">📷 후면</button>
-    </div>
+    <div id="nav-logo">RPE</div>
+    <select id="exercise-select">
+      <option value="SQ">Squat (Head)</option>
+      <option value="BP">Bench Press (Wrist)</option>
+      <option value="DL">Deadlift (Wrist)</option>
+      <option value="OHP">OHP (Wrist)</option>
+      <option value="RDL">RDL (Wrist)</option>
+      <option value="CUSTOM">Custom…</option>
+    </select>
+    <button id="cam-btn" title="Flip camera">⟳</button>
   </header>
 
+  <!-- Camera -->
   <div id="camera-wrap">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="overlay"></canvas>
-
-    <!-- Countdown overlay -->
+    <div id="phase-badge">Ready</div>
+    <div id="track-chip">
+      <div class="tv" id="track-point-label">HEAD</div>
+      <div class="tl">Tracking</div>
+    </div>
     <div id="countdown-overlay">
       <div id="countdown-num">4</div>
-      <div id="countdown-label">카메라 앞에 서주세요</div>
-    </div>
-
-    <div id="phase-ribbon">대기 중</div>
-    <div id="knee-chip">
-      <div class="kval" id="knee-val">—°</div>
-      <div class="klabel">무릎 각도</div>
-    </div>
-    <div id="weight-chip">
-      <div class="wval" id="weight-display">— kg</div>
-      <div class="wlabel">무게</div>
+      <div id="countdown-label">Get into position…</div>
     </div>
   </div>
 
+  <!-- Panel -->
   <section id="panel">
-    <!-- Weight input -->
+    <!-- Weight -->
     <div id="weight-row">
-      <input type="number" id="weight-input" placeholder="무게 입력" min="0" max="999" step="0.5" />
-      <div id="unit-toggle">
-        <button class="unit-btn active" data-unit="kg">kg</button>
-        <button class="unit-btn" data-unit="lb">lb</button>
+      <input type="number" id="weight-in" placeholder="Weight (kg)" step="0.5"/>
+      <div class="unit-seg">
+        <button class="unit-seg-btn active" data-unit="kg">kg</button>
+        <button class="unit-seg-btn" data-unit="lb">lb</button>
       </div>
     </div>
 
     <!-- Metrics -->
     <div id="metrics">
-      <div class="metric-card"><div class="metric-val volt" id="m-reps">0</div><div class="metric-label">REPS</div></div>
-      <div class="metric-card"><div class="metric-val" id="m-time">—</div><div class="metric-label">컨센트릭(s)</div></div>
-      <div class="metric-card"><div class="metric-val teal" id="m-vloss">0%</div><div class="metric-label">속도손실</div></div>
-      <div class="metric-card"><div class="metric-val" id="m-mean">—</div><div class="metric-label">세트평균</div></div>
+      <div class="metric"><div class="metric-val acc" id="m-reps">0</div><div class="metric-label">Reps</div></div>
+      <div class="metric"><div class="metric-val" id="m-time">—</div><div class="metric-label">Conc (s)</div></div>
+      <div class="metric"><div class="metric-val teal" id="m-vloss">0%</div><div class="metric-label">V-Loss</div></div>
+      <div class="metric"><div class="metric-val" id="m-mean">—</div><div class="metric-label">Avg (s)</div></div>
     </div>
 
-    <!-- RPE -->
+    <!-- RPE Bar -->
     <div id="rpe-wrap">
       <div id="rpe-header">
-        <span id="rpe-label">RPE 추정</span>
-        <div style="display:flex;align-items:baseline;gap:8px">
+        <span id="rpe-label">RPE Estimate</span>
+        <div id="rpe-right">
           <span id="rpe-desc">—</span>
-          <span id="rpe-value">—</span>
+          <span id="rpe-val">—</span>
         </div>
       </div>
       <div id="rpe-track"><div id="rpe-fill"></div></div>
@@ -236,83 +213,72 @@ html,body{height:100%;background:var(--void);color:var(--text);font-family:var(-
 
     <!-- Tabs -->
     <div id="tabs">
-      <button class="tab-btn active" data-tab="current">이번 세트</button>
-      <button class="tab-btn" data-tab="history">기록 보기</button>
+      <button class="tab-btn active" data-tab="current">This Set</button>
+      <button class="tab-btn" data-tab="sets">All Sets</button>
     </div>
 
-    <!-- Tab: current set -->
     <div id="tab-current" class="visible">
       <div id="history-wrap">
         <table id="rep-table">
-          <thead><tr><th>REP</th><th>시간(s)</th><th>무릎∠</th><th>속도손실</th><th>RPE</th></tr></thead>
+          <thead><tr><th>Rep</th><th>Time(s)</th><th>V-Loss</th><th>RPE</th></tr></thead>
           <tbody id="rep-tbody"></tbody>
         </table>
       </div>
     </div>
 
-    <!-- Tab: full history -->
-    <div id="tab-history">
-      <div id="full-history-wrap">
-        <table id="full-history-table">
-          <thead><tr><th>날짜/세트</th><th>무게</th><th>렙수</th><th>평균(s)</th><th>RPE</th></tr></thead>
-          <tbody id="full-history-tbody"></tbody>
+    <div id="tab-sets">
+      <div id="history-wrap" style="max-height:100px">
+        <table id="rep-table">
+          <thead><tr><th>Set</th><th>Ex</th><th>Reps</th><th>RPE</th><th>Weight</th></tr></thead>
+          <tbody id="sets-tbody"></tbody>
         </table>
       </div>
     </div>
 
     <!-- Actions -->
     <div id="actions">
-      <button id="btn-start">▶ 세트 시작</button>
-      <button id="btn-reset">초기화</button>
+      <button id="btn-start">▶ Start Set</button>
+      <button id="btn-reset">Reset</button>
+      <button id="btn-cam-flip">⟳</button>
     </div>
   </section>
 </div>
 
 <script type="module">
-import {
-  PoseLandmarker, FilesetResolver, DrawingUtils
-} from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm';
+import { PoseLandmarker, FilesetResolver, DrawingUtils }
+  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm';
 
-// ═══════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════
-const LM = { HIP_L:23, HIP_R:24, KNEE_L:25, KNEE_R:26, ANKLE_L:27, ANKLE_R:28 };
-const HIP_BELOW_KNEE_MARGIN = 0.015;
-const COUNTDOWN_SEC = 4;
+// ── Landmark indices ──────────────────────────────────────
+const LM = {
+  NOSE:0, HEAD:0,
+  L_WRIST:15, R_WRIST:16,
+  L_HIP:23, R_HIP:24,
+  L_KNEE:25, R_KNEE:26,
+  L_ANKLE:27, R_ANKLE:28,
+};
 
+// Exercise config: which landmarks to track + movement direction
+const EX_CONFIG = {
+  SQ:  { label:'Squat',         track:'HEAD',   landmarks:[LM.NOSE],             axis:'y', concentric:'up',   description:'Head tracking' },
+  BP:  { label:'Bench Press',   track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
+  DL:  { label:'Deadlift',      track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
+  OHP: { label:'OHP',           track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
+  RDL: { label:'RDL',           track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
+  CUSTOM:{ label:'Custom',      track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
+};
+
+// RPE table
 const RPE_TABLE = [
-  {loss:0,  rpe:6.0, label:'매우 쉬움'},
-  {loss:5,  rpe:6.5, label:'쉬움'},
-  {loss:10, rpe:7.0, label:'보통'},
-  {loss:15, rpe:7.5, label:'조금 힘듦'},
-  {loss:20, rpe:8.0, label:'힘듦'},
-  {loss:25, rpe:8.5, label:'많이 힘듦'},
-  {loss:30, rpe:9.0, label:'거의 한계'},
-  {loss:40, rpe:9.5, label:'한계 직전'},
-  {loss:50, rpe:10,  label:'최대'},
+  {loss:0,  rpe:6.0, label:'Very Easy'},
+  {loss:5,  rpe:6.5, label:'Easy'},
+  {loss:10, rpe:7.0, label:'Moderate'},
+  {loss:15, rpe:7.5, label:'Somewhat Hard'},
+  {loss:20, rpe:8.0, label:'Hard'},
+  {loss:25, rpe:8.5, label:'Very Hard'},
+  {loss:30, rpe:9.0, label:'Near Max'},
+  {loss:40, rpe:9.5, label:'Almost Max'},
+  {loss:50, rpe:10,  label:'Max'},
 ];
-
-const Phase = Object.freeze({
-  WAITING:'WAITING', DESCENDING:'DESCENDING', DEPTH:'DEPTH', ASCENDING:'ASCENDING'
-});
-
-// ═══════════════════════════════════════════════════════════
-// GEOMETRY
-// ═══════════════════════════════════════════════════════════
-function angleDeg(A,B,C) {
-  const BAx=A.x-B.x,BAy=A.y-B.y,BCx=C.x-B.x,BCy=C.y-B.y;
-  const dot=BAx*BCx+BAy*BCy;
-  const mag=Math.hypot(BAx,BAy)*Math.hypot(BCx,BCy);
-  return mag===0?180:Math.acos(Math.max(-1,Math.min(1,dot/mag)))*(180/Math.PI);
-}
-function mid(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
-
-// Exponential moving average — smooths landmark jitter
-class EMA {
-  constructor(alpha=0.35){this.alpha=alpha;this.val=null}
-  update(v){this.val=this.val===null?v:this.alpha*v+(1-this.alpha)*this.val;return this.val}
-  reset(){this.val=null}
-}
 
 function lookupRPE(loss) {
   const t=RPE_TABLE;
@@ -327,64 +293,61 @@ function lookupRPE(loss) {
   return t[t.length-1];
 }
 
-// ═══════════════════════════════════════════════════════════
-// SQUAT TRACKER
-// ═══════════════════════════════════════════════════════════
-class SquatTracker {
+// ── EMA smoother ──────────────────────────────────────────
+class EMA {
+  constructor(a=0.3){this.a=a;this.v=null;}
+  update(x){this.v=this.v===null?x:this.a*x+(1-this.a)*this.v;return this.v;}
+  reset(){this.v=null;}
+}
+
+// ── Squat Tracker (generalized) ──────────────────────────
+const Phase = Object.freeze({WAITING:'WAITING',DESCENDING:'DESCENDING',BOTTOM:'BOTTOM',ASCENDING:'ASCENDING'});
+
+class RepTracker {
   constructor(onRep){
     this.onRep=onRep;
     this.repHistory=[];
-    // EMA smoothers for hip and knee Y
-    this._hipEMA  = new EMA(0.3);
-    this._kneeEMA = new EMA(0.3);
-    // Velocity smoother (hip Y delta per frame)
-    this._velEMA  = new EMA(0.25);
+    this._ema=new EMA(0.3);
+    this._velEMA=new EMA(0.25);
     this._reset();
   }
 
-  update(lm, now=performance.now()) {
+  update(lm, exKey, now=performance.now()){
     if(!lm||lm.length<29) return null;
+    const cfg=EX_CONFIG[exKey];
+    if(!cfg) return null;
 
-    const hipL=lm[LM.HIP_L],hipR=lm[LM.HIP_R];
-    const kneeL=lm[LM.KNEE_L],kneeR=lm[LM.KNEE_R];
-    const ankleL=lm[LM.ANKLE_L],ankleR=lm[LM.ANKLE_R];
+    // Get tracked point position (average if multiple landmarks)
+    const coords=cfg.landmarks.map(i=>lm[i]).filter(Boolean);
+    if(!coords.length) return null;
 
-    // Check landmark visibility — skip if joints not visible
+    // Check visibility
     const minVis=0.4;
-    if((hipL.visibility??1)<minVis||(hipR.visibility??1)<minVis||
-       (kneeL.visibility??1)<minVis||(kneeR.visibility??1)<minVis) return null;
+    if(coords.some(c=>(c.visibility??1)<minVis)) return null;
 
-    const rawHip  = mid(hipL,hipR);
-    const rawKnee = mid(kneeL,kneeR);
+    const rawY=coords.reduce((s,c)=>s+c.y,0)/coords.length;
+    const rawX=coords.reduce((s,c)=>s+c.x,0)/coords.length;
+    const smoothY=this._ema.update(rawY);
 
-    // Smooth positions
-    const hipY  = this._hipEMA.update(rawHip.y);
-    const kneeY = this._kneeEMA.update(rawKnee.y);
-    const hip   = {x:rawHip.x, y:hipY};
-    const knee  = {x:rawKnee.x,y:kneeY};
-
-    // Velocity (Y per ms, positive = downward)
+    // Velocity: positive = moving DOWN in image coords
     let vel=0;
     if(this._prev){
       const dt=(now-this._prev.now)||1;
-      vel=this._velEMA.update((hipY-this._prev.hipY)/dt);
+      vel=this._velEMA.update((smoothY-this._prev.y)/dt);
     }
 
-    const kneeAngleL=angleDeg(hipL,kneeL,ankleL);
-    const kneeAngleR=angleDeg(hipR,kneeR,ankleR);
-    const kneeAngle=(kneeAngleL+kneeAngleR)/2;
+    // For concentric='up': ascending = vel < 0 (y decreasing)
+    // For concentric='down': ascending = vel > 0
+    const isDescending = cfg.concentric==='up' ? vel>0.00015 : vel<-0.00015;
+    const isAscending  = cfg.concentric==='up' ? vel<-0.00015 : vel>0.00015;
 
-    // Powerlifting depth: hip crease below knee
-    const atDepth = hipY > kneeY + HIP_BELOW_KNEE_MARGIN;
-    const hipDelta = hipY - kneeY;
-
-    this._fsm({hip,knee,hipY,kneeY,kneeAngle,atDepth,hipDelta,vel,now});
-    this._prev={hipY,kneeY,now};
+    this._fsm({y:smoothY,vel,isDescending,isAscending,now});
+    this._prev={y:smoothY,now};
 
     return {
-      phase:this._phase,kneeAngleL,kneeAngleR,kneeAngle,
-      atDepth,hipDelta,hip,knee,vel,
-      repCount:this.repHistory.length,
+      phase:this._phase,
+      trackedY:smoothY,trackedX:rawX,
+      vel,repCount:this.repHistory.length,
       setMean:+this._setMean.toFixed(3),
       lastRep:this.repHistory[this.repHistory.length-1]??null,
     };
@@ -392,80 +355,64 @@ class SquatTracker {
 
   resetSet(){
     this.repHistory=[];
-    this._hipEMA.reset();
-    this._kneeEMA.reset();
+    this._ema.reset();
     this._velEMA.reset();
     this._reset();
   }
 
   _reset(){
     this._phase=Phase.WAITING;this._prev=null;
-    this._depthKneeAngle=180;this._depthHipDelta=0;
-    this._ascentStart=null;this._lockout=0;this._setMean=0;
-    // Require N consecutive frames for each state transition (debounce)
-    this._descentFrames=0;
-    this._ascentFrames=0;
+    this._bottomY=null;this._ascentStart=null;
+    this._lockout=0;this._descentFrames=0;this._setMean=0;
   }
 
-  _fsm({hipY,atDepth,hipDelta,kneeAngle,vel,now}){
-    // vel > 0 = moving down, vel < 0 = moving up
+  _fsm({y,vel,isDescending,isAscending,now}){
     switch(this._phase){
-
       case Phase.WAITING:
-        // Need consistent downward movement to start
-        if(vel>0.00015){
+        if(isDescending){
           this._descentFrames++;
-          if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0}
-        } else {
-          this._descentFrames=Math.max(0,this._descentFrames-1);
-        }
+          if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0;}
+        } else this._descentFrames=Math.max(0,this._descentFrames-1);
         break;
 
       case Phase.DESCENDING:
-        if(atDepth){
-          this._phase=Phase.DEPTH;
-          this._depthKneeAngle=kneeAngle;
-          this._depthHipDelta=hipDelta;
-        }
-        // False start — hip went back up quickly without reaching depth
-        if(vel<-0.0003){
-          this._descentFrames++;
-          if(this._descentFrames>=6){this._phase=Phase.WAITING;this._descentFrames=0}
+        // Track extreme point
+        if(this._bottomY===null) this._bottomY=y;
+        if(EX_CONFIG[currentExercise].concentric==='up') {
+          if(y>this._bottomY) this._bottomY=y; // deeper down
         } else {
-          this._descentFrames=0;
+          if(y<this._bottomY) this._bottomY=y;
+        }
+        // Transition to bottom when velocity reverses
+        if(isAscending){
+          this._phase=Phase.BOTTOM;
+        }
+        // False start guard
+        if(isAscending&&Math.abs(vel)<0.0001){
+          this._descentFrames++;
+          if(this._descentFrames>=5){this._phase=Phase.WAITING;this._descentFrames=0;}
         }
         break;
 
-      case Phase.DEPTH:
-        // Track deepest point
-        if(hipDelta>this._depthHipDelta){
-          this._depthHipDelta=hipDelta;
-          this._depthKneeAngle=kneeAngle;
-        }
-        // Transition to ascending when hip clears knee
-        if(!atDepth){
-          this._ascentFrames++;
-          if(this._ascentFrames>=3){
-            this._phase=Phase.ASCENDING;
-            this._ascentStart=now;
-            this._ascentFrames=0;
-            this._lockout=0;
-          }
-        } else {
-          this._ascentFrames=0;
+      case Phase.BOTTOM:
+        if(isAscending){
+          this._phase=Phase.ASCENDING;
+          this._ascentStart=now;
+          this._lockout=0;
         }
         break;
 
       case Phase.ASCENDING:
-        // Dropped back to depth — false ascent
-        if(atDepth){this._phase=Phase.DEPTH;this._lockout=0;break}
-        this._lockout++;
-        // Lockout confirmed after N frames above knee AND velocity near zero
-        if(this._lockout>=6 && Math.abs(vel)<0.0004){
-          const dur=(now-this._ascentStart)/1000;
-          if(dur>=0.2&&dur<=8) this._completeRep(dur,now);
-          this._phase=Phase.WAITING;
+        if(isAscending||Math.abs(vel)<0.0003){
+          this._lockout++;
+        } else {
           this._lockout=0;
+        }
+        if(this._lockout>=6 && Math.abs(vel)<0.0005){
+          const dur=(now-this._ascentStart)/1000;
+          if(dur>=0.15&&dur<=10) this._completeRep(dur,now);
+          this._phase=Phase.WAITING;
+          this._lockout=0;this._bottomY=null;
         }
         break;
     }
@@ -477,99 +424,50 @@ class SquatTracker {
     this._setMean=prevMean+(1/n)*(dur-prevMean);
     const lossPercent=n===1?0:Math.max(0,((dur-prevMean)/prevMean)*100);
     const {rpe,label}=lookupRPE(lossPercent);
-    const rep={
-      repNumber:n,
-      concentricDuration:+dur.toFixed(3),
-      kneeAngleAtDepth:+this._depthKneeAngle.toFixed(1),
-      hipDepthDelta:+this._depthHipDelta.toFixed(4),
-      velocityLoss:+lossPercent.toFixed(1),
-      rpe,rpeLabel:label,timestamp:now,
-    };
+    const rep={repNumber:n,concentricDuration:+dur.toFixed(3),
+      velocityLoss:+lossPercent.toFixed(1),rpe,rpeLabel:label,timestamp:now};
     this.repHistory.push(rep);
     this.onRep?.(rep,[...this.repHistory]);
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-// DOM
-// ═══════════════════════════════════════════════════════════
-const $=s=>document.querySelector(s);
-const video=$('#video'),canvas=$('#overlay'),ctx=canvas.getContext('2d');
-const loadScr=$('#loading-screen'),loadStat=$('#loading-status');
-const phaseRib=$('#phase-ribbon'),kneeVal=$('#knee-val');
-const weightDisplay=$('#weight-display');
-const mReps=$('#m-reps'),mTime=$('#m-time'),mVloss=$('#m-vloss'),mMean=$('#m-mean');
-const rpeValue=$('#rpe-value'),rpeDesc=$('#rpe-desc'),rpeFill=$('#rpe-fill');
-const repTbody=$('#rep-tbody'),fullHistTbody=$('#full-history-tbody');
-const btnStart=$('#btn-start'),btnReset=$('#btn-reset');
-const countdownOverlay=$('#countdown-overlay'),countdownNum=$('#countdown-num');
-const weightInput=$('#weight-input');
-const toastEl=$('#toast');
-
-// ═══════════════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════════════
-let poseLandmarker=null,drawingUtils=null,stream=null;
-let tracking=false,rafId=null,lastVideoTime=-1;
-let facingMode='environment'; // default rear camera
-let weightKg=null,weightUnit='kg';
+// ── State ─────────────────────────────────────────────────
+let poseLandmarker=null, drawingUtils=null, stream=null;
+let tracking=false, rafId=null, lastVideoTime=-1;
+let facingMode='environment';
+let currentExercise='SQ';
+let weightKg=null, weightUnit='kg';
 let countingDown=false;
+let setHistory=[];
+let setNumber=0;
 
-// ═══════════════════════════════════════════════════════════
-// HISTORY (localStorage)
-// ═══════════════════════════════════════════════════════════
-const HISTORY_KEY='liftiq_history_v1';
-
-function loadHistory(){
-  try{return JSON.parse(localStorage.getItem(HISTORY_KEY))||[];}
-  catch{return [];}
-}
-function saveSession(session){
-  const h=loadHistory();
-  h.unshift(session);
-  // Keep last 60 sessions
-  localStorage.setItem(HISTORY_KEY,JSON.stringify(h.slice(0,60)));
-}
-function renderFullHistory(){
-  const h=loadHistory();
-  fullHistTbody.innerHTML='';
-  if(!h.length){
-    fullHistTbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:12px">기록 없음</td></tr>';
-    return;
-  }
-  h.forEach(s=>{
-    const tr=document.createElement('tr');
-    const rpeClass=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
-    tr.innerHTML=`
-      <td>${s.date}<br><span style="font-size:9px;color:var(--muted)">${s.time}</span></td>
-      <td>${s.weight||'—'}</td>
-      <td>${s.repCount}</td>
-      <td>${s.avgDuration}</td>
-      <td class="${rpeClass}">${s.maxRpe}</td>
-    `;
-    fullHistTbody.appendChild(tr);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════
-// TRACKER
-// ═══════════════════════════════════════════════════════════
-const tracker = new SquatTracker((rep, history) => {
-  updateMetrics(rep, history);
+const tracker=new RepTracker((rep,history)=>{
+  updateMetrics(rep,history);
   addRepRow(rep);
-  showToast(`렙 ${rep.repNumber} ✓  ${rep.concentricDuration}s — RPE ${rep.rpe}`);
+  showToast(`Rep ${rep.repNumber} ✓  ${rep.concentricDuration}s — RPE ${rep.rpe}`);
 });
 
-// ═══════════════════════════════════════════════════════════
-// MEDIAPIPE
-// ═══════════════════════════════════════════════════════════
-async function initMediaPipe(){
-  setStatus('모델 파일 다운로드 중…');
+// ── DOM ───────────────────────────────────────────────────
+const $=s=>document.querySelector(s);
+const video=$('#video'), canvas=$('#overlay'), ctx=canvas.getContext('2d');
+const loadScreen=$('#loading-screen'), loadStatus=$('#load-status');
+const phaseBadge=$('#phase-badge'), trackLabel=$('#track-point-label');
+const mReps=$('#m-reps'), mTime=$('#m-time'), mVloss=$('#m-vloss'), mMean=$('#m-mean');
+const rpeVal=$('#rpe-val'), rpeDesc=$('#rpe-desc'), rpeFill=$('#rpe-fill');
+const repTbody=$('#rep-tbody'), setsTbody=$('#sets-tbody');
+const btnStart=$('#btn-start'), btnReset=$('#btn-reset');
+const countdownOverlay=$('#countdown-overlay'), countdownNum=$('#countdown-num');
+const weightIn=$('#weight-in');
+const exSelect=$('#exercise-select');
+
+// ── MediaPipe ─────────────────────────────────────────────
+async function initMP(){
+  setStatus('Downloading model…');
   try{
     const vision=await FilesetResolver.forVisionTasks(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm'
     );
-    setStatus('포즈 추적기 초기화 중…');
+    setStatus('Initializing pose tracker…');
     poseLandmarker=await PoseLandmarker.createFromOptions(vision,{
       baseOptions:{
         modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
@@ -581,30 +479,23 @@ async function initMediaPipe(){
       minTrackingConfidence:0.55,
     });
     drawingUtils=new DrawingUtils(ctx);
-    setStatus('카메라 권한 요청 중…');
+    setStatus('Requesting camera…');
     await startCamera();
-    loadScr.style.display='none';
+    loadScreen.style.display='none';
   }catch(e){
-    setStatus('오류: '+e.message);
-    console.error(e);
+    setStatus('Error: '+e.message);console.error(e);
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-// CAMERA
-// ═══════════════════════════════════════════════════════════
 async function startCamera(){
   if(stream) stream.getTracks().forEach(t=>t.stop());
   stream=await navigator.mediaDevices.getUserMedia({
-    video:{facingMode,width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}},
-    audio:false,
+    video:{facingMode,width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}},audio:false
   });
   video.srcObject=stream;
-  // Mirror only front-facing camera
   video.style.transform=facingMode==='user'?'scaleX(-1)':'none';
   await new Promise(res=>video.onloadedmetadata=res);
   resizeCanvas();
-  updateCamButtons();
 }
 
 function resizeCanvas(){
@@ -613,44 +504,9 @@ function resizeCanvas(){
   canvas.style.width='100%';canvas.style.height='100%';
 }
 
-function updateCamButtons(){
-  $('#btn-cam-front').classList.toggle('active',facingMode==='user');
-  $('#btn-cam-rear').classList.toggle('active',facingMode==='environment');
-}
-
-// ═══════════════════════════════════════════════════════════
-// COUNTDOWN
-// ═══════════════════════════════════════════════════════════
-function startCountdown(){
-  if(countingDown) return;
-  countingDown=true;
-  btnStart.disabled=true;
-  let n=COUNTDOWN_SEC;
-  countdownNum.textContent=n;
-  countdownOverlay.classList.add('visible');
-
-  const tick=setInterval(()=>{
-    n--;
-    if(n>0){
-      countdownNum.textContent=n;
-    } else {
-      clearInterval(tick);
-      countdownOverlay.classList.remove('visible');
-      countingDown=false;
-      btnStart.disabled=false;
-      // Actually start tracking
-      tracking=true;
-      btnStart.textContent='⏸ 세트 중지';
-      detectLoop();
-    }
-  },1000);
-}
-
-// ═══════════════════════════════════════════════════════════
-// DETECTION LOOP
-// ═══════════════════════════════════════════════════════════
+// ── Detection loop ────────────────────────────────────────
 function detectLoop(){
-  if(!tracking){rafId=null;return}
+  if(!tracking){rafId=null;return;}
   rafId=requestAnimationFrame(detectLoop);
   if(video.readyState<2||video.currentTime===lastVideoTime) return;
   lastVideoTime=video.currentTime;
@@ -659,221 +515,219 @@ function detectLoop(){
   const result=poseLandmarker.detectForVideo(video,now);
   const lm=result?.landmarks?.[0];
   ctx.clearRect(0,0,canvas.width,canvas.height);
+
   if(lm){
     // Draw skeleton
-    drawingUtils.drawLandmarks(lm,{
-      radius:3,color:'rgba(232,255,71,0.7)',fillColor:'rgba(232,255,71,0.3)',lineWidth:1
-    });
-    drawingUtils.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{
-      color:'rgba(255,255,255,0.18)',lineWidth:1.5
-    });
-    const live=tracker.update(lm,now);
+    drawingUtils.drawLandmarks(lm,{radius:3,color:'rgba(224,108,0,0.6)',fillColor:'rgba(224,108,0,0.2)',lineWidth:1});
+    drawingUtils.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{color:'rgba(255,255,255,0.15)',lineWidth:1.5});
+
+    const live=tracker.update(lm,currentExercise,now);
     if(live) renderOverlay(live,lm);
   } else {
     updatePhaseUI('WAITING');
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-// OVERLAY
-// ═══════════════════════════════════════════════════════════
+// ── Overlay ───────────────────────────────────────────────
 function renderOverlay(live,lm){
-  const W=canvas.width,H=canvas.height;
-  const px=l=>({x:l.x*W,y:l.y*H});
+  const W=canvas.width, H=canvas.height;
+  const cfg=EX_CONFIG[currentExercise];
 
-  // Depth line at knee height
-  const kneeY=((lm[LM.KNEE_L].y+lm[LM.KNEE_R].y)/2)*H;
+  // Draw tracked point(s) as highlighted dot
+  cfg.landmarks.forEach(idx=>{
+    const pt=lm[idx];if(!pt)return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pt.x*W,pt.y*H,10,0,Math.PI*2);
+    ctx.fillStyle=live.phase==='ASCENDING'?'rgba(0,229,200,0.8)':
+                  live.phase==='BOTTOM'?'rgba(224,108,0,0.9)':
+                  live.phase==='DESCENDING'?'rgba(255,193,7,0.8)':'rgba(255,255,255,0.4)';
+    ctx.fill();
+    ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+    ctx.restore();
+  });
+
+  // Velocity indicator bar (right side)
+  const barH=120, barW=8, barX=W-20, barY=(H-barH)/2;
+  const velNorm=Math.max(-1,Math.min(1,live.vel/0.002));
   ctx.save();
-  ctx.setLineDash([8,5]);
-  ctx.lineWidth=1.5;
-  ctx.strokeStyle=live.atDepth?'#e8ff47':'rgba(255,61,61,0.8)';
-  ctx.beginPath();ctx.moveTo(0,kneeY);ctx.lineTo(W,kneeY);ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.font='bold 10px "Barlow Condensed",sans-serif';
-  ctx.fillStyle=live.atDepth?'#e8ff47':'rgba(255,61,61,0.9)';
-  ctx.fillText(live.atDepth?'DEPTH ✓':'DEPTH LINE',8,kneeY-5);
-  ctx.restore();
-
-  // Knee angle arcs
-  drawAngleArc(ctx,px(lm[23]),px(lm[25]),px(lm[27]),live.kneeAngleL,'#00e5c8');
-  drawAngleArc(ctx,px(lm[24]),px(lm[26]),px(lm[28]),live.kneeAngleR,'#00e5c8');
-
-  // Hip dot
-  const hipPx=px(mid(lm[23],lm[24]));
-  ctx.save();
-  ctx.beginPath();ctx.arc(hipPx.x,hipPx.y,6,0,Math.PI*2);
-  ctx.fillStyle=live.atDepth?'#e8ff47':'rgba(255,255,255,0.6)';
-  ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  ctx.beginPath();roundRect(ctx,barX,barY,barW,barH,4);ctx.fill();
+  const midY=barY+barH/2;
+  const fillH=Math.abs(velNorm)*barH/2;
+  ctx.fillStyle=velNorm<0?'rgba(0,229,200,0.8)':'rgba(255,193,7,0.6)';
+  ctx.fillRect(barX,velNorm<0?midY-fillH:midY,barW,fillH);
   ctx.restore();
 
   updatePhaseUI(live.phase);
-  kneeVal.textContent=live.kneeAngle?live.kneeAngle.toFixed(1)+'°':'—°';
+  trackLabel.textContent=cfg.track;
 }
 
-function drawAngleArc(ctx,hip,knee,ankle,deg,color){
-  if(!hip||!knee||!ankle) return;
-  const toHip={x:hip.x-knee.x,y:hip.y-knee.y};
-  const toAnk={x:ankle.x-knee.x,y:ankle.y-knee.y};
-  const a1=Math.atan2(toHip.y,toHip.x),a2=Math.atan2(toAnk.y,toAnk.x);
-  const r=22;
-  ctx.save();
-  ctx.strokeStyle=color;ctx.lineWidth=2;
-  ctx.beginPath();ctx.arc(knee.x,knee.y,r,a1,a2);ctx.stroke();
-  const amid=(a1+a2)/2;
-  ctx.font='bold 11px "JetBrains Mono",monospace';
-  ctx.fillStyle=color;
-  ctx.fillText(`${deg.toFixed(0)}°`,knee.x+r*1.3*Math.cos(amid)-10,knee.y+r*1.3*Math.sin(amid)+4);
-  ctx.restore();
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
 }
 
-// ═══════════════════════════════════════════════════════════
-// UI UPDATES
-// ═══════════════════════════════════════════════════════════
-const PHASE_LABELS={WAITING:'대기 중',DESCENDING:'내려가는 중',DEPTH:'DEPTH ✓',ASCENDING:'올라가는 중'};
+// ── Phase UI ──────────────────────────────────────────────
+const PHASE_LABELS={WAITING:'Ready',DESCENDING:'Descending',BOTTOM:'Bottom',ASCENDING:'Ascending'};
+const PHASE_CLS={WAITING:'',DESCENDING:'descending',BOTTOM:'bottom',ASCENDING:'ascending'};
 function updatePhaseUI(phase){
-  phaseRib.textContent=PHASE_LABELS[phase]??phase;
-  phaseRib.className='phase-'+phase.toLowerCase();
+  phaseBadge.textContent=PHASE_LABELS[phase]||phase;
+  phaseBadge.className=PHASE_CLS[phase]||'';
 }
 
+// ── Metrics ───────────────────────────────────────────────
 function updateMetrics(rep,history){
   mReps.textContent=rep.repNumber;
   mTime.textContent=rep.concentricDuration.toFixed(2);
   mVloss.textContent=rep.velocityLoss.toFixed(1)+'%';
   const mean=history.reduce((s,r)=>s+r.concentricDuration,0)/history.length;
   mMean.textContent=mean.toFixed(2);
-  mVloss.className='metric-val '+(rep.velocityLoss>=25?'danger':rep.velocityLoss>=15?'':'teal');
+  mVloss.className='metric-val '+(rep.velocityLoss>=25?'danger':rep.velocityLoss>=10?'':'teal');
   const pct=Math.min(100,((rep.rpe-6)/4)*100);
   rpeFill.style.width=pct+'%';
-  rpeFill.style.background=rep.rpe>=9?'#ff3d3d':rep.rpe>=8?'#ffc107':'#e8ff47';
-  rpeValue.textContent=rep.rpe;
-  rpeDesc.textContent=rep.rpeLabel??'';
+  rpeFill.style.background=rep.rpe>=9?'#e05555':rep.rpe>=8?'#ffc107':'var(--acc)';
+  rpeVal.textContent=rep.rpe;
+  rpeDesc.textContent=rep.rpeLabel||'';
 }
 
 function addRepRow(rep){
   const tr=document.createElement('tr');
   const cls=rep.rpe>=9?'rpe-high':rep.rpe>=8?'rpe-med':'rpe-ok';
-  tr.innerHTML=`<td>Rep ${rep.repNumber}</td><td>${rep.concentricDuration.toFixed(3)}</td><td>${rep.kneeAngleAtDepth.toFixed(1)}°</td><td>${rep.velocityLoss.toFixed(1)}%</td><td class="${cls}">${rep.rpe}</td>`;
+  tr.innerHTML=`<td>Rep ${rep.repNumber}</td><td>${rep.concentricDuration.toFixed(2)}</td><td>${rep.velocityLoss.toFixed(1)}%</td><td class="${cls}">${rep.rpe}</td>`;
   repTbody.prepend(tr);
 }
 
-function saveCurrentSet(){
-  const history=tracker.repHistory;
-  if(!history.length) return;
-  const avg=(history.reduce((s,r)=>s+r.concentricDuration,0)/history.length).toFixed(3);
-  const maxRpe=Math.max(...history.map(r=>r.rpe));
-  const now=new Date();
-  const session={
-    date:now.toLocaleDateString('ko-KR'),
-    time:now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),
-    weight:weightKg?`${weightKg}${weightUnit}`:'',
-    repCount:history.length,
-    avgDuration:avg,
-    maxRpe,
-    reps:history,
-  };
-  saveSession(session);
-  renderFullHistory();
+// ── Countdown ─────────────────────────────────────────────
+function startCountdown(){
+  if(countingDown)return;
+  countingDown=true;btnStart.disabled=true;
+  let n=4;
+  countdownNum.textContent=n;
+  countdownOverlay.classList.add('visible');
+  const tick=setInterval(()=>{
+    n--;
+    if(n>0){countdownNum.textContent=n;}
+    else{
+      clearInterval(tick);
+      countdownOverlay.classList.remove('visible');
+      countingDown=false;btnStart.disabled=false;
+      tracking=true;
+      btnStart.textContent='⏸ Stop Set';
+      detectLoop();
+    }
+  },1000);
 }
 
-let toastTimer;
-function showToast(msg){
-  toastEl.textContent=msg;
-  toastEl.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer=setTimeout(()=>toastEl.classList.remove('show'),2800);
-}
-function setStatus(msg){loadStat.textContent=msg}
-
-// ═══════════════════════════════════════════════════════════
-// CONTROLS
-// ═══════════════════════════════════════════════════════════
+// ── Controls ──────────────────────────────────────────────
 btnStart.addEventListener('click',()=>{
-  if(!poseLandmarker) return;
+  if(!poseLandmarker)return;
   if(tracking){
-    // Stop
-    tracking=false;
-    cancelAnimationFrame(rafId);
-    btnStart.textContent='▶ 세트 시작';
-    saveCurrentSet();
-    showToast('세트 저장 완료 ✓');
+    tracking=false;cancelAnimationFrame(rafId);
+    btnStart.textContent='▶ Start Set';
+    // Save to set history
+    if(tracker.repHistory.length>0){
+      setNumber++;
+      const history=tracker.repHistory;
+      const maxRpe=Math.max(...history.map(r=>r.rpe));
+      const avgDur=(history.reduce((s,r)=>s+r.concentricDuration,0)/history.length).toFixed(2);
+      setHistory.unshift({setNum:setNumber,exercise:EX_CONFIG[currentExercise].label,
+        reps:history.length,maxRpe,avgDur,
+        weight:weightKg?`${weightKg}${weightUnit}`:''});
+      renderSetsTab();
+      showToast(`Set ${setNumber} saved — ${history.length} reps, RPE ${maxRpe}`);
+    }
   } else {
-    // Countdown then start
     startCountdown();
   }
 });
 
 btnReset.addEventListener('click',()=>{
-  tracking=false;
-  cancelAnimationFrame(rafId);
+  tracking=false;cancelAnimationFrame(rafId);
   tracker.resetSet();
   repTbody.innerHTML='';
   mReps.textContent='0';mTime.textContent='—';mVloss.textContent='0%';mMean.textContent='—';
-  rpeValue.textContent='—';rpeDesc.textContent='—';rpeFill.style.width='0%';
-  btnStart.textContent='▶ 세트 시작';
+  rpeVal.textContent='—';rpeDesc.textContent='—';rpeFill.style.width='0%';
+  btnStart.textContent='▶ Start Set';
   updatePhaseUI('WAITING');
-  showToast('세트 초기화 완료');
+  showToast('Set reset');
 });
 
-$('#btn-cam-front').addEventListener('click',async()=>{
-  if(facingMode==='user') return;
-  facingMode='user';
-  try{await startCamera();showToast('전면 카메라');}
-  catch{showToast('카메라 전환 실패');}
+$('#btn-cam-flip').addEventListener('click',async()=>{
+  facingMode=facingMode==='user'?'environment':'user';
+  try{await startCamera();showToast(facingMode==='user'?'Front camera':'Rear camera');}
+  catch{showToast('Camera flip failed');}
 });
-$('#btn-cam-rear').addEventListener('click',async()=>{
-  if(facingMode==='environment') return;
-  facingMode='environment';
-  try{await startCamera();showToast('후면 카메라');}
-  catch{showToast('카메라 전환 실패');}
+$('#cam-btn').addEventListener('click',async()=>{
+  facingMode=facingMode==='user'?'environment':'user';
+  try{await startCamera();}catch{}
 });
 
-// Weight input
-weightInput.addEventListener('input',()=>{
-  const v=parseFloat(weightInput.value);
+exSelect.addEventListener('change',()=>{
+  currentExercise=exSelect.value;
+  tracker.resetSet();
+  repTbody.innerHTML='';
+  trackLabel.textContent=EX_CONFIG[currentExercise].track;
+  showToast(EX_CONFIG[currentExercise].label+' — '+EX_CONFIG[currentExercise].description);
+});
+
+weightIn.addEventListener('input',()=>{
+  const v=parseFloat(weightIn.value);
   if(!isNaN(v)&&v>0){
     weightKg=weightUnit==='kg'?v:+(v*0.453592).toFixed(1);
-    weightDisplay.textContent=`${v} ${weightUnit}`;
-  } else {
-    weightKg=null;
-    weightDisplay.textContent=`— ${weightUnit}`;
-  }
+  }else weightKg=null;
 });
 
-document.querySelectorAll('.unit-btn').forEach(btn=>{
+document.querySelectorAll('.unit-seg-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
-    document.querySelectorAll('.unit-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.unit-seg-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     weightUnit=btn.dataset.unit;
-    // Convert displayed value
-    const v=parseFloat(weightInput.value);
+    const v=parseFloat(weightIn.value);
     if(!isNaN(v)&&v>0){
-      const converted=weightUnit==='kg'?+(v*0.453592).toFixed(1):+(v*2.20462).toFixed(1);
-      weightInput.value=converted;
-      weightKg=weightUnit==='kg'?converted:+(converted*0.453592).toFixed(1);
-      weightDisplay.textContent=`${converted} ${weightUnit}`;
+      const c=weightUnit==='kg'?+(v*0.453592).toFixed(1):+(v*2.20462).toFixed(1);
+      weightIn.value=c;
+      weightKg=weightUnit==='kg'?c:+(c*0.453592).toFixed(1);
     }
+    weightIn.placeholder=`Weight (${weightUnit})`;
   });
 });
 
-// Tabs
 document.querySelectorAll('.tab-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     const tab=btn.dataset.tab;
     $('#tab-current').classList.toggle('visible',tab==='current');
-    $('#tab-history').classList.toggle('visible',tab==='history');
-    if(tab==='history') renderFullHistory();
+    $('#tab-sets').classList.toggle('visible',tab==='sets');
   });
 });
 
+function renderSetsTab(){
+  setsTbody.innerHTML='';
+  setHistory.forEach(s=>{
+    const tr=document.createElement('tr');
+    const cls=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
+    tr.innerHTML=`<td>Set ${s.setNum}</td><td>${s.exercise}</td><td>${s.reps}</td><td class="${cls}">${s.maxRpe}</td><td>${s.weight||'—'}</td>`;
+    setsTbody.appendChild(tr);
+  });
+}
+
 window.addEventListener('resize',resizeCanvas);
 
-// ═══════════════════════════════════════════════════════════
-// BOOT
-// ═══════════════════════════════════════════════════════════
-renderFullHistory();
-initMediaPipe();
+// ── Toast ─────────────────────────────────────────────────
+let toastT;
+function showToast(msg){
+  const t=$('#toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2500);
+}
+function setStatus(msg){loadStatus.textContent=msg;}
+
+// ── Boot ──────────────────────────────────────────────────
+initMP();
 </script>
 </body>
 </html>
