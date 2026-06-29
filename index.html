@@ -604,7 +604,7 @@ let countingDown=false;
 let setHistory=[], setNumber=0;
 let autoRecord=true, useWakeLock=true, useAutoStop=true, autoStopSec=4, useColorBand=false;
 let wakeLockSentinel=null;
-let mediaRecorder=null, recordedChunks=[], isRecording=false, camOn=true, _recStreamRef=null;
+let mediaRecorder=null, recordedChunks=[], isRecording=false, camOn=true;
 let liveRpe=null, liveRepNum=0;
 
 // Auto-stop state
@@ -989,18 +989,18 @@ function handleStopSet(auto=false){
 }
 
 // ── Recording ────────────────────────────────────────────────
-// Use raw camera stream — most reliable across all Android/iOS browsers.
-// Canvas captureStream() is broken on many Android Chrome versions.
+// Rules:
+// 1. Use the SINGLE preview stream — no second getUserMedia call
+// 2. Never touch video.srcObject during recording
+// 3. Save as .mp4 extension (webm container, avc1 or vp8 codec)
 
-const camControls = document.getElementById('cam-controls');
+const camControls=document.getElementById('cam-controls');
 
-// mp4 preferred, webm fallback
 function getRecMime(){
+  // Android Chrome supports webm/vp8 most reliably
   const order=[
-    'video/mp4;codecs=avc1',
-    'video/mp4',
-    'video/webm;codecs=vp9',
     'video/webm;codecs=vp8',
+    'video/webm;codecs=vp9',
     'video/webm',
   ];
   for(const m of order){
@@ -1009,39 +1009,24 @@ function getRecMime(){
   return '';
 }
 
-async function startRecording(){
+function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
 
-  // Open a separate camera stream for recording to avoid preview buffer conflicts
-  let recStream=stream; // fallback
-  try{
-    const constraints={
-      video:{facingMode, width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}},
-      audio:false
-    };
-    recStream=await navigator.mediaDevices.getUserMedia(constraints);
-    // Store so we can stop it after recording
-    _recStreamRef=recStream;
-  }catch(e){
-    // Fallback to preview stream
-    recStream=stream;
-    _recStreamRef=null;
-  }
-
+  // Use the existing preview stream directly — do NOT open a second camera
   const mime=getRecMime();
   let mr;
   try{
-    mr=new MediaRecorder(recStream, mime?{mimeType:mime}:{});
+    mr=new MediaRecorder(stream, mime?{mimeType:mime}:{});
   }catch(e){
-    try{ mr=new MediaRecorder(recStream); }
+    try{ mr=new MediaRecorder(stream); }
     catch(e2){ showToast('녹화 미지원'); return; }
   }
 
   mr.ondataavailable=e=>{ if(e.data&&e.data.size>0) recordedChunks.push(e.data); };
   mr.onstop=saveRecording;
-  mr.onerror=e=>{ showToast('Rec: '+(e.error?.message||'error')); isRecording=false; setRecUI(false); };
-  mr.start(250); // smaller chunks = smoother playback
+  mr.onerror=e=>{ showToast('Rec err'); isRecording=false; setRecUI(false); };
+  mr.start(100); // 100ms chunks — smallest possible, smoothest result
   mediaRecorder=mr;
   isRecording=true;
   setRecUI(true);
@@ -1049,9 +1034,9 @@ async function startRecording(){
 }
 
 let compositeRafId=null;
-function startCompositeLoop(){} // noop
-function drawCompositeFrame(){} // noop
-function drawVideoOverlayText(){} // noop
+function startCompositeLoop(){}
+function drawCompositeFrame(){}
+function drawVideoOverlayText(){}
 
 function setRecUI(on){
   if(camControls) camControls.style.opacity=on?'0':'1';
@@ -1061,38 +1046,32 @@ function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
   isRecording=false;
   setRecUI(false);
-  if(compositeRafId){ cancelAnimationFrame(compositeRafId); compositeRafId=null; }
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
       setTimeout(()=>{
         try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){}
-        // Stop dedicated rec stream after saving
-        setTimeout(()=>{
-          if(_recStreamRef){ _recStreamRef.getTracks().forEach(t=>t.stop()); _recStreamRef=null; }
-        },1000);
-      }, 500);
+      },300);
     }
   }catch(e){
     try{ mediaRecorder.stop(); }catch(e2){}
-    if(_recStreamRef){ _recStreamRef.getTracks().forEach(t=>t.stop()); _recStreamRef=null; }
   }
 }
 
 function saveRecording(){
-  if(!recordedChunks.length){ showToast('No video data recorded'); return; }
+  if(!recordedChunks.length){ showToast('No video data'); return; }
 
-  const mime=mediaRecorder?.mimeType||recordedChunks[0]?.type||'video/mp4';
-  const ext=mime.includes('mp4')?'mp4':'webm';
+  // Always save as .mp4 — most phones play it regardless of container
+  const mime=mediaRecorder?.mimeType||'video/webm';
   const blob=new Blob(recordedChunks,{type:mime});
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
-  const filename=`tatelift_${EX_CONFIG[currentExercise].label}_${ts}.${ext}`;
+  const filename=`tatelift_${EX_CONFIG[currentExercise].label}_${ts}.mp4`;
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
 
-  // Web Share API (Android native sheet, iOS share sheet)
+  // Web Share API first (Android native gallery save)
   if(navigator.canShare){
     try{
-      const file=new File([blob],filename,{type:mime});
+      const file=new File([blob],filename,{type:'video/mp4'});
       if(navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:'TATELIFT'})
           .then(()=>showToast('✓ 저장 완료'))
