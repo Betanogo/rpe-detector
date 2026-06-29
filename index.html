@@ -239,6 +239,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
     <!-- Multi-point tracking chips -->
     <div id="track-chips"></div>
     <div id="toast"></div>
+    <div id="debug-overlay" style="position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.75);color:#fff;font-family:monospace;font-size:11px;padding:6px 10px;border-radius:6px;pointer-events:none;z-index:10;line-height:1.6;display:none;"></div>
     <div id="countdown-overlay">
       <div id="countdown-num">3</div>
       <div id="countdown-label">Get into position…</div>
@@ -253,6 +254,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
     <div id="cam-controls">
       <button class="cam-fab" id="btn-cam-off" title="Toggle camera">📷</button>
       <button class="cam-fab" id="btn-cam-flip" title="Flip camera">⟳</button>
+      <button class="cam-fab" id="btn-debug" title="Debug" style="font-size:12px;">DBG</button>
     </div>
   </div>
 
@@ -568,8 +570,16 @@ class RepTracker{
     const dir=this._direction();
     const goingDown=(dir===1);
     const goingUp=(dir===-1);
-    // Debug: log to window for inspection
-    window._dbg={phase:this._phase,dir,y:y.toFixed(4),dc:this._downCount,uc:this._upCount,sc:this._stillCount,buf:this._buf.length};
+    // Debug overlay on screen
+    const _dbgEl=document.getElementById('debug-overlay');
+    if(_dbgEl&&_dbgEl.style.display!=='none'){
+      _dbgEl.innerHTML=
+        'Phase: <b style="color:#e06c00">'+this._phase+'</b><br>'+
+        'Dir: '+(dir===1?'⬇DOWN':dir===-1?'⬆UP':'—')+'<br>'+
+        'Y: '+y.toFixed(4)+'<br>'+
+        'DC/UC/SC: '+this._downCount+'/'+this._upCount+'/'+this._stillCount+'<br>'+
+        'buf: '+this._buf.length;
+    }
 
     switch(this._phase){
       case Phase.WAITING:
@@ -1296,6 +1306,11 @@ btnReset.addEventListener('click',()=>{
   btnStart.textContent='▶ Start'; btnStart.classList.remove('stopping');
   updatePhaseUI('WAITING'); updateAutoStopRing(0); releaseWakeLock();
   showToast('Set reset');
+});
+
+document.getElementById('btn-debug').addEventListener('click',()=>{
+  const el=document.getElementById('debug-overlay');
+  el.style.display=el.style.display==='none'?'block':'none';
 });
 
 btnCamFlip.addEventListener('click',async()=>{
