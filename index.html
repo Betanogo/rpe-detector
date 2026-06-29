@@ -379,7 +379,7 @@ const EX_CONFIG = {
     concentric: 'up',
     trackGroups: [
       { source:'pose', indices:[PL.NOSE],              label:'HEAD',  color:'#00e5c8' },
-      { source:'pose', indices:[PL.L_HIP, PL.R_HIP],  label:'CHEST', color:'#e06c00' },
+      { source:'pose', indices:[PL.L_SHOULDER, PL.R_SHOULDER], label:'SHOULDER', color:'#e06c00' },
     ],
   },
   BP: {
@@ -548,31 +548,21 @@ class RepTracker{
   }
 
   _fsm({y,vel,rawVel,isDescending,isAscending,now}){
-    // Rolling position buffer (last 6 frames) for trend detection
-    this._posHistory.push(y);
-    if(this._posHistory.length>6) this._posHistory.shift();
-
-    // Position trend: compare recent avg vs older avg
-    const ph=this._posHistory;
-    const half=Math.floor(ph.length/2);
-    const recentAvg=ph.slice(half).reduce((a,b)=>a+b,0)/Math.max(1,ph.length-half);
-    const olderAvg=ph.slice(0,half).reduce((a,b)=>a+b,0)/Math.max(1,half);
-    const posTrend=recentAvg-olderAvg; // positive = moving down, negative = moving up
-
-    // Position-based direction (more reliable than raw velocity for slow reps)
-    const POS_THRESH=0.004; // ~0.4% of frame height per 6 frames
-    const movingDown=posTrend>POS_THRESH;
-    const movingUp=posTrend<-POS_THRESH;
+    // Use smoothed velocity (vel) for direction — reliable at all speeds
+    // vel > 0 = moving down (in image coords), vel < 0 = moving up
+    const T=0.00008; // very low threshold — catches even slow reps
+    const goingDown = vel >  T;
+    const goingUp   = vel < -T;
 
     switch(this._phase){
       case Phase.WAITING:
-        if(movingDown){
+        if(goingDown){
           this._descentFrames++;
-          if(this._descentFrames>=3){
+          if(this._descentFrames>=4){
             this._phase=Phase.DESCENDING;
             this._descentFrames=0;
             this._repStart=now;
-            this._topY=y; // record starting position
+            this._topY=y;
           }
         } else {
           this._descentFrames=Math.max(0,this._descentFrames-1);
@@ -581,44 +571,45 @@ class RepTracker{
 
       case Phase.DESCENDING:
         if(this._bottomY===null) this._bottomY=y;
-        if(y>this._bottomY) this._bottomY=y; // track deepest point
-        // Transition to BOTTOM when clearly moving up
-        if(movingUp) this._phase=Phase.BOTTOM;
+        if(y>this._bottomY) this._bottomY=y;
+        if(goingUp) this._phase=Phase.BOTTOM;
         break;
 
       case Phase.BOTTOM:
-        if(movingUp){
+        // Wait for clear upward movement
+        if(goingUp){
           this._phase=Phase.ASCENDING;
           this._ascentStart=now;
           this._stillFrames=0;
+        }
+        // Bail if we start going down again without ascending (false bottom)
+        if(goingDown && this._bottomY!==null){
+          if(this._bottomY===null) this._bottomY=y;
+          if(y>this._bottomY) this._bottomY=y;
         }
         break;
 
       case Phase.ASCENDING:{
         const dur=(now-this._ascentStart)/1000;
-        const range=this._bottomY&&this._topY?Math.abs(this._bottomY-this._topY):0.1;
 
-        // Still = not moving meaningfully in either direction
-        if(!movingDown&&!movingUp) this._stillFrames++;
-        else this._stillFrames=Math.max(0,this._stillFrames-2);
+        // Still counter: increment when barely moving either way
+        if(Math.abs(vel)<T*1.5) this._stillFrames++;
+        else this._stillFrames=Math.max(0,this._stillFrames-1);
 
-        // Rep complete:
-        // (A) Moving down again = next rep starting
-        // (B) Held still at top for 1s
-        const nextRepStarting=movingDown && dur>0.4;
-        const lockedOut=this._stillFrames>=30 && dur>0.4; // 30 frames ≈ 1s
+        // (A) Next rep: going down again after at least 0.5s ascending
+        const nextRep = goingDown && dur>0.5;
+        // (B) Lockout: held still ~1.5s at top
+        const locked = this._stillFrames>=45 && dur>0.5;
 
-        if(nextRepStarting||lockedOut){
+        if(nextRep||locked){
           const totalDur=this._repStart?((now-this._repStart)/1000):dur;
-          if(totalDur>=0.8&&totalDur<=25) this._completeRep(totalDur,dur,now);
+          if(totalDur>=0.8&&totalDur<=30) this._completeRep(totalDur,dur,now);
           this._phase=Phase.WAITING;
           this._bottomY=null; this._topY=null;
           this._peakY=null; this._stillFrames=0; this._repStart=null;
           this._posHistory=[];
         }
-
-        // Safety cap 25s
-        if(dur>25){
+        if(dur>30){
           this._phase=Phase.WAITING;
           this._bottomY=null; this._topY=null;
           this._peakY=null; this._stillFrames=0; this._repStart=null;
@@ -989,7 +980,6 @@ function startCountdown(){
       lastMovementTime=performance.now();
       btnStart.textContent='⏸ Stop';
       btnStart.classList.add('stopping');
-      if(autoRecord&&stream&&!isRecording) startRecording();
       detectLoop();
     }
   },1000);
@@ -1039,39 +1029,132 @@ function handleStopSet(auto=false){
 }
 
 // ── Recording ────────────────────────────────────────────────
-// Raw camera stream recording — most reliable on Android Chrome
-// No canvas composite (causes flicker), no getDisplayMedia (causes stream end)
+// Strategy: getDisplayMedia (screen capture of this tab)
+// Crop to camera-wrap + metrics area, save as real mp4 if supported
 
 const camControls=document.getElementById('cam-controls');
+let _screenStream=null;
+let _screenVideo=null;
+let compositeRafId=null;
 
 function setRecUI(on){
   if(camControls) camControls.style.opacity=on?'0':'1';
 }
 
-let compositeRafId=null;
-function startCompositeLoop(){}
-
 function getRecMime(){
-  const order=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  // Try real mp4 first (Android Chrome 130+ supports it)
+  const order=[
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
   for(const m of order){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}
   return '';
 }
 
+function startCompositeLoop(sx,sy,sw,sh){
+  if(compositeRafId) cancelAnimationFrame(compositeRafId);
+  function loop(){
+    if(!isRecording){compositeRafId=null;return;}
+    compositeRafId=requestAnimationFrame(loop);
+    if(!_screenVideo||_screenVideo.readyState<2) return;
+    recCtx.drawImage(_screenVideo,sx,sy,sw,sh,0,0,recCanvas.width,recCanvas.height);
+  }
+  loop();
+}
+
 async function startRecording(){
-  if(!stream||isRecording) return;
+  if(isRecording) return;
   recordedChunks=[];
 
+  // getDisplayMedia must be called from user gesture context
+  let screenStream;
+  try{
+    screenStream=await navigator.mediaDevices.getDisplayMedia({
+      video:{preferCurrentTab:true,frameRate:{ideal:30}},
+      audio:false,
+      preferCurrentTab:true,
+    });
+  }catch(e){
+    // User cancelled or not supported — fall back to raw camera
+    _startRawRecording();
+    return;
+  }
+
+  _screenStream=screenStream;
+  _screenVideo=document.createElement('video');
+  _screenVideo.srcObject=screenStream;
+  _screenVideo.muted=true;
+  _screenVideo.playsInline=true;
+  await _screenVideo.play().catch(()=>{});
+  await new Promise(r=>setTimeout(r,400));
+
+  const svW=_screenVideo.videoWidth||window.innerWidth;
+  const svH=_screenVideo.videoHeight||window.innerHeight;
+  const scaleX=svW/window.innerWidth;
+  const scaleY=svH/window.innerHeight;
+
+  // Crop: camera top → metrics bottom
+  const camRect=document.getElementById('camera-wrap').getBoundingClientRect();
+  const metRect=document.getElementById('metrics').getBoundingClientRect();
+  const sx=Math.round(camRect.left*scaleX);
+  const sy=Math.round(camRect.top*scaleY);
+  const sw=Math.round(camRect.width*scaleX);
+  const sh=Math.round((metRect.bottom-camRect.top)*scaleY);
+
+  recCanvas.width=sw;
+  recCanvas.height=Math.max(sh,1);
+
+  isRecording=true;
+  startCompositeLoop(sx,sy,sw,sh);
+  await new Promise(r=>setTimeout(r,200));
+
+  // captureStream from composite canvas
+  let recStream;
+  try{
+    recStream=recCanvas.captureStream(30);
+    if(!recStream.getVideoTracks().length||
+       recStream.getVideoTracks()[0].readyState==='ended') throw new Error('empty');
+  }catch(e){
+    recStream=screenStream; // fallback: full screen
+    if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
+  }
+
+  _startMediaRecorder(recStream);
+
+  // If user stops share externally, stop set
+  screenStream.getVideoTracks()[0].addEventListener('ended',()=>{
+    if(isRecording) handleStopSet(false);
+  });
+}
+
+function _startRawRecording(){
+  // Fallback: raw camera stream (no crop/overlay)
   const mime=getRecMime();
   let mr;
-  try{ mr=new MediaRecorder(stream, mime?{mimeType:mime}:{}); }
-  catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ showToast('녹화 미지원'); return; } }
-
-  mr.ondataavailable=e=>{if(e.data&&e.data.size>0) recordedChunks.push(e.data);};
+  try{ mr=new MediaRecorder(stream,mime?{mimeType:mime}:{}); }
+  catch(e){ try{mr=new MediaRecorder(stream);}catch(e2){return;} }
+  mr.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
   mr.onstop=saveRecording;
-  mr.onerror=e=>{showToast('Rec err'); isRecording=false; setRecUI(false);};
   mr.start();
   mediaRecorder=mr;
   isRecording=true;
+  setRecUI(true);
+}
+
+function _startMediaRecorder(recStream){
+  const mime=getRecMime();
+  let mr;
+  try{ mr=new MediaRecorder(recStream,mime?{mimeType:mime}:{}); }
+  catch(e){ try{mr=new MediaRecorder(recStream);}catch(e2){setRecUI(false);isRecording=false;return;} }
+  mr.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
+  mr.onstop=saveRecording;
+  mr.onerror=()=>{isRecording=false;setRecUI(false);};
+  mr.start();
+  mediaRecorder=mr;
   setRecUI(true);
 }
 
@@ -1079,6 +1162,9 @@ function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
   isRecording=false;
   setRecUI(false);
+  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
+  if(_screenStream){_screenStream.getTracks().forEach(t=>t.stop());_screenStream=null;}
+  if(_screenVideo){_screenVideo.srcObject=null;_screenVideo=null;}
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
@@ -1090,15 +1176,18 @@ function stopRecording(){
 function saveRecording(){
   if(!recordedChunks.length){showToast('No video data');return;}
   const mime=mediaRecorder?.mimeType||'video/webm';
+  const isRealMp4=mime.includes('mp4');
+  const ext=isRealMp4?'mp4':'webm';
   const blob=new Blob(recordedChunks,{type:mime});
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
   const exLabel=EX_CONFIG[currentExercise].label.replace(/[^a-zA-Z0-9]/g,'_');
-  const filename=`tatelift_${exLabel}_${ts}.mp4`;
+  const filename=`tatelift_${exLabel}_${ts}.${ext}`;
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
 
   if(navigator.canShare){
     try{
-      const file=new File([blob],filename,{type:'video/mp4'});
+      const shareMime=isRealMp4?'video/mp4':'video/webm';
+      const file=new File([blob],filename,{type:shareMime});
       if(navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:'TATELIFT'})
           .then(()=>showToast('✓ 저장 완료'))
@@ -1153,7 +1242,11 @@ btnStart.addEventListener('click',()=>{
     rpeVal.textContent='—'; rpeDesc.textContent='—'; rpeFill.style.width='0%';
     requestWakeLock();
     // Start recording HERE (user gesture context) before async countdown
-    startCountdown();
+    if(autoRecord&&!isRecording){
+      startRecording().then(()=>startCountdown());
+    } else {
+      startCountdown();
+    }
   }
 });
 
