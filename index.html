@@ -489,7 +489,7 @@ class RepTracker{
     // Keep a window of recent Y values (100ms worth at 30fps = ~3 frames)
     // We compare current Y against recent peak/trough to detect direction
     this._buf.push({y,t:now});
-    if(this._buf.length>16) this._buf.shift(); // keep ~530ms
+    if(this._buf.length>12) this._buf.shift(); // keep ~400ms
 
     this._fsm(y, now);
 
@@ -558,7 +558,7 @@ class RepTracker{
     const recent=b.slice(mid).reduce((s,e)=>s+e.y,0)/(b.length-mid);
     const older=b.slice(0,mid).reduce((s,e)=>s+e.y,0)/mid;
     const diff=recent-older;
-    const THRESH=0.008; // higher = less noise sensitivity
+    const THRESH=0.003;
     if(diff>THRESH) return 1;   // DOWN
     if(diff<-THRESH) return -1; // UP
     return 0;
@@ -568,12 +568,14 @@ class RepTracker{
     const dir=this._direction();
     const goingDown=(dir===1);
     const goingUp=(dir===-1);
+    // Debug: log to window for inspection
+    window._dbg={phase:this._phase,dir,y:y.toFixed(4),dc:this._downCount,uc:this._upCount,sc:this._stillCount,buf:this._buf.length};
 
     switch(this._phase){
       case Phase.WAITING:
         if(goingDown){
           this._downCount++;
-          if(this._downCount>=4){
+          if(this._downCount>=3){
             this._phase=Phase.DESCENDING;
             this._downCount=0; this._upCount=0;
             this._repStart=now;
@@ -588,7 +590,7 @@ class RepTracker{
         if(y>this._localMax) this._localMax=y;
         if(goingUp){
           this._upCount++;
-          if(this._upCount>=3){
+          if(this._upCount>=2){
             this._phase=Phase.BOTTOM;
             this._upCount=0; this._downCount=0;
           }
@@ -600,7 +602,7 @@ class RepTracker{
       case Phase.BOTTOM:
         if(goingUp){
           this._upCount++;
-          if(this._upCount>=3){
+          if(this._upCount>=2){
             this._phase=Phase.ASCENDING;
             this._ascentStart=now;
             this._upCount=0; this._downCount=0; this._stillCount=0;
@@ -616,7 +618,7 @@ class RepTracker{
 
         if(goingDown){
           this._downCount++;
-          if(this._downCount>=3 && dur>0.3){
+          if(this._downCount>=2 && dur>0.3){
             const totalDur=this._repStart?((now-this._repStart)/1000):dur;
             if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
             // Immediately transition to next descending rep
@@ -633,7 +635,7 @@ class RepTracker{
         else this._stillCount=0;
 
         // Held still at top = last rep
-        if(this._stillCount>=40 && dur>0.3){
+        if(this._stillCount>=30 && dur>0.3){
           const totalDur=this._repStart?((now-this._repStart)/1000):dur;
           if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
           this._phase=Phase.WAITING;
