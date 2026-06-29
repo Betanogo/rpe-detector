@@ -540,56 +540,89 @@ class RepTracker{
 
   _reset(){
     this._phase=Phase.WAITING; this._prev=null;
-    this._bottomY=null; this._ascentStart=null;
-    this._repStart=null;
+    this._bottomY=null; this._topY=null;
+    this._ascentStart=null; this._repStart=null;
     this._peakY=null;
     this._descentFrames=0; this._stillFrames=0;
+    this._posHistory=[]; // rolling position buffer
   }
 
   _fsm({y,vel,rawVel,isDescending,isAscending,now}){
+    // Rolling position buffer (last 6 frames) for trend detection
+    this._posHistory.push(y);
+    if(this._posHistory.length>6) this._posHistory.shift();
+
+    // Position trend: compare recent avg vs older avg
+    const ph=this._posHistory;
+    const half=Math.floor(ph.length/2);
+    const recentAvg=ph.slice(half).reduce((a,b)=>a+b,0)/Math.max(1,ph.length-half);
+    const olderAvg=ph.slice(0,half).reduce((a,b)=>a+b,0)/Math.max(1,half);
+    const posTrend=recentAvg-olderAvg; // positive = moving down, negative = moving up
+
+    // Position-based direction (more reliable than raw velocity for slow reps)
+    const POS_THRESH=0.004; // ~0.4% of frame height per 6 frames
+    const movingDown=posTrend>POS_THRESH;
+    const movingUp=posTrend<-POS_THRESH;
+
     switch(this._phase){
       case Phase.WAITING:
-        if(isDescending){this._descentFrames++;if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0;this._repStart=now;}}
-        else this._descentFrames=Math.max(0,this._descentFrames-1);
+        if(movingDown){
+          this._descentFrames++;
+          if(this._descentFrames>=3){
+            this._phase=Phase.DESCENDING;
+            this._descentFrames=0;
+            this._repStart=now;
+            this._topY=y; // record starting position
+          }
+        } else {
+          this._descentFrames=Math.max(0,this._descentFrames-1);
+        }
         break;
+
       case Phase.DESCENDING:
         if(this._bottomY===null) this._bottomY=y;
-        if(y>this._bottomY) this._bottomY=y;
-        if(isAscending){this._phase=Phase.BOTTOM;}
+        if(y>this._bottomY) this._bottomY=y; // track deepest point
+        // Transition to BOTTOM when clearly moving up
+        if(movingUp) this._phase=Phase.BOTTOM;
         break;
+
       case Phase.BOTTOM:
-        if(isAscending){this._phase=Phase.ASCENDING;this._ascentStart=now;this._stillFrames=0;}
+        if(movingUp){
+          this._phase=Phase.ASCENDING;
+          this._ascentStart=now;
+          this._stillFrames=0;
+        }
         break;
+
       case Phase.ASCENDING:{
         const dur=(now-this._ascentStart)/1000;
+        const range=this._bottomY&&this._topY?Math.abs(this._bottomY-this._topY):0.1;
 
-        // Track peak position (highest point reached during ascent)
-        if(y < (this._peakY??y)) this._peakY=y;
+        // Still = not moving meaningfully in either direction
+        if(!movingDown&&!movingUp) this._stillFrames++;
+        else this._stillFrames=Math.max(0,this._stillFrames-2);
 
-        // Use raw velocity for still detection — more responsive
-        const rawVelAbs=Math.abs(rawVel);
-        if(rawVelAbs<0.00020) this._stillFrames++;
-        else this._stillFrames=Math.max(0, this._stillFrames-2); // decay quickly on movement
+        // Rep complete:
+        // (A) Moving down again = next rep starting
+        // (B) Held still at top for 1s
+        const nextRepStarting=movingDown && dur>0.4;
+        const lockedOut=this._stillFrames>=30 && dur>0.4; // 30 frames ≈ 1s
 
-        // Rep complete when:
-        // (A) clearly descending again after meaningful ascent (next rep starting)
-        // (B) completely still for 1.0s (lockout at top) — reduced from 1.5s
-        const fps30equiv=30; // 1.0s × 30fps
-        const nextRepStarting = isDescending && dur>0.4 && rawVelAbs>0.00015;
-        const lockedOut = this._stillFrames >= fps30equiv && dur>0.4;
-
-        if(nextRepStarting || lockedOut){
-          // Total rep time: descent start → ascent end
+        if(nextRepStarting||lockedOut){
           const totalDur=this._repStart?((now-this._repStart)/1000):dur;
-          if(totalDur>=0.5 && totalDur<=20) this._completeRep(totalDur, dur, now);
+          if(totalDur>=0.8&&totalDur<=25) this._completeRep(totalDur,dur,now);
           this._phase=Phase.WAITING;
-          this._bottomY=null; this._peakY=null; this._stillFrames=0; this._repStart=null;
+          this._bottomY=null; this._topY=null;
+          this._peakY=null; this._stillFrames=0; this._repStart=null;
+          this._posHistory=[];
         }
 
-        // Safety: max 20s cap
-        if(dur>20){
+        // Safety cap 25s
+        if(dur>25){
           this._phase=Phase.WAITING;
-          this._bottomY=null; this._peakY=null; this._stillFrames=0; this._repStart=null;
+          this._bottomY=null; this._topY=null;
+          this._peakY=null; this._stillFrames=0; this._repStart=null;
+          this._posHistory=[];
         }
         break;}
     }
@@ -956,6 +989,7 @@ function startCountdown(){
       lastMovementTime=performance.now();
       btnStart.textContent='⏸ Stop';
       btnStart.classList.add('stopping');
+      if(autoRecord&&stream&&!isRecording) startRecording();
       detectLoop();
     }
   },1000);
@@ -1004,8 +1038,18 @@ function handleStopSet(auto=false){
   releaseWakeLock();
 }
 
-// ── Recording (getDisplayMedia, crop camera+metrics) ─────────
+// ── Recording ────────────────────────────────────────────────
+// Raw camera stream recording — most reliable on Android Chrome
+// No canvas composite (causes flicker), no getDisplayMedia (causes stream end)
+
 const camControls=document.getElementById('cam-controls');
+
+function setRecUI(on){
+  if(camControls) camControls.style.opacity=on?'0':'1';
+}
+
+let compositeRafId=null;
+function startCompositeLoop(){}
 
 function getRecMime(){
   const order=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
@@ -1013,133 +1057,32 @@ function getRecMime(){
   return '';
 }
 
-function setRecUI(on){
-  if(camControls) camControls.style.opacity=on?'0':'1';
-}
-
-let compositeRafId=null;
-let _screenStream=null;
-let _screenVideo=null;
-
-function startCompositeLoop(cropRect){
-  if(compositeRafId) cancelAnimationFrame(compositeRafId);
-  const {sx,sy,sw,sh}=cropRect;
-
-  function loop(){
-    if(!isRecording){compositeRafId=null;return;}
-    compositeRafId=requestAnimationFrame(loop);
-    if(!_screenVideo||_screenVideo.readyState<2) return;
-    recCtx.drawImage(_screenVideo, sx, sy, sw, sh, 0, 0, recCanvas.width, recCanvas.height);
-  }
-  loop();
-}
-
 async function startRecording(){
-  if(isRecording) return;
+  if(!stream||isRecording) return;
   recordedChunks=[];
-
-  // Ask for screen capture — preferCurrentTab pre-selects this tab on Chrome
-  let screenStream;
-  try{
-    screenStream=await navigator.mediaDevices.getDisplayMedia({
-      video:{preferCurrentTab:true, frameRate:{ideal:30}},
-      audio:false,
-      preferCurrentTab:true,
-    });
-  }catch(e){
-    showToast('화면 공유 취소');
-    return;
-  }
-
-  _screenStream=screenStream;
-  _screenVideo=document.createElement('video');
-  _screenVideo.srcObject=screenStream;
-  _screenVideo.muted=true;
-  _screenVideo.playsInline=true;
-  await _screenVideo.play();
-
-  // Wait for screen video to have dimensions
-  await new Promise(r=>setTimeout(r,300));
-
-  const svW=_screenVideo.videoWidth;
-  const svH=_screenVideo.videoHeight;
-  const scaleX=svW/window.innerWidth;
-  const scaleY=svH/window.innerHeight;
-
-  // Crop: camera-wrap top to metrics row bottom
-  const camWrap=document.getElementById('camera-wrap');
-  const metricsEl=document.getElementById('metrics');
-  const camRect=camWrap.getBoundingClientRect();
-  const metRect=metricsEl.getBoundingClientRect();
-
-  const sx=Math.round(camRect.left*scaleX);
-  const sy=Math.round(camRect.top*scaleY);
-  const sw=Math.round(camRect.width*scaleX);
-  // Height: from camera top to bottom of metrics row
-  const sh=Math.round((metRect.bottom-camRect.top)*scaleY);
-
-  recCanvas.width=sw;
-  recCanvas.height=sh;
-
-  isRecording=true;
-  startCompositeLoop({sx,sy,sw,sh});
-
-  // Wait for first composite frame
-  await new Promise(r=>setTimeout(r,200));
-
-  // captureStream from composite canvas
-  let recStream;
-  try{
-    recStream=recCanvas.captureStream(30);
-    // Validate track is active
-    if(!recStream.getVideoTracks().length||recStream.getVideoTracks()[0].readyState==='ended'){
-      throw new Error('empty track');
-    }
-  }catch(e){
-    // Fallback: use raw screen stream
-    recStream=screenStream;
-    if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
-  }
 
   const mime=getRecMime();
   let mr;
-  try{ mr=new MediaRecorder(recStream,mime?{mimeType:mime}:{}); }
-  catch(e){ try{mr=new MediaRecorder(recStream);}catch(e2){showToast('녹화 미지원');_cleanup();return;} }
+  try{ mr=new MediaRecorder(stream, mime?{mimeType:mime}:{}); }
+  catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ showToast('녹화 미지원'); return; } }
 
-  mr.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
+  mr.ondataavailable=e=>{if(e.data&&e.data.size>0) recordedChunks.push(e.data);};
   mr.onstop=saveRecording;
-  mr.onerror=e=>{showToast('Rec err');_cleanup();};
-
-  // If user stops screen share manually → stop set
-  screenStream.getVideoTracks()[0].addEventListener('ended',()=>{
-    if(isRecording) stopRecording();
-  });
-
+  mr.onerror=e=>{showToast('Rec err'); isRecording=false; setRecUI(false);};
   mr.start();
   mediaRecorder=mr;
+  isRecording=true;
   setRecUI(true);
-  showToast('REC ●');
-}
-
-function _cleanup(){
-  isRecording=false;
-  setRecUI(false);
-  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
-  if(_screenStream){_screenStream.getTracks().forEach(t=>t.stop());_screenStream=null;}
-  if(_screenVideo){_screenVideo.srcObject=null;_screenVideo=null;}
 }
 
 function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
   isRecording=false;
-  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
   setRecUI(false);
-  if(_screenStream){_screenStream.getTracks().forEach(t=>t.stop());_screenStream=null;}
-  if(_screenVideo){_screenVideo.srcObject=null;_screenVideo=null;}
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
-      setTimeout(()=>{try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}},400);
+      setTimeout(()=>{try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}},300);
     }
   }catch(e){try{mediaRecorder.stop();}catch(e2){}}
 }
@@ -1210,11 +1153,7 @@ btnStart.addEventListener('click',()=>{
     rpeVal.textContent='—'; rpeDesc.textContent='—'; rpeFill.style.width='0%';
     requestWakeLock();
     // Start recording HERE (user gesture context) before async countdown
-    if(autoRecord && !isRecording){
-      startRecording().then(()=>startCountdown());
-    } else {
-      startCountdown();
-    }
+    startCountdown();
   }
 });
 
