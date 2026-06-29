@@ -349,8 +349,9 @@ import {
 // ── Pose landmark indices ─────────────────────────────────
 const PL = {
   NOSE:0,
-  L_WRIST:15, R_WRIST:16,
-  L_HIP:23,   R_HIP:24,
+  L_ELBOW:13,  R_ELBOW:14,
+  L_WRIST:15,  R_WRIST:16,
+  L_HIP:23,    R_HIP:24,
   L_SHOULDER:11, R_SHOULDER:12,
 };
 
@@ -389,8 +390,9 @@ const EX_CONFIG = {
   OHP: {
     label: 'OHP',
     concentric: 'up',
+    // Primary: average of wrist + elbow gives more stable vertical signal
     trackGroups: [
-      { source:'pose', indices:[PL.L_WRIST, PL.R_WRIST], label:'WRIST', color:'#00e5c8' },
+      { source:'pose', indices:[PL.L_WRIST, PL.R_WRIST, PL.L_ELBOW, PL.R_ELBOW], label:'WRIST+ELB', color:'#00e5c8' },
     ],
   },
   RDL: {
@@ -933,17 +935,31 @@ function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[]; liveRpe=null; liveRepNum=0;
 
-  // Use composite canvas (video + overlay) — cap at 720p for perf/compat
-  const W=Math.min(video.videoWidth||1280, 1280);
-  const H=Math.min(video.videoHeight||720, 720);
-  recCanvas.width=W; recCanvas.height=H;
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
 
   let recStream=null;
-  try{ recStream=recCanvas.captureStream(30); }catch(e){}
 
-  // Fallback: raw camera stream (no overlay)
-  if(!recStream) recStream=stream;
-  else startCompositeLoop();
+  if(!isIOS){
+    // Non-iOS: composite canvas (video + RPE overlay)
+    try{
+      const W=Math.min(video.videoWidth||1280, 1280);
+      const H=Math.min(video.videoHeight||720, 720);
+      recCanvas.width=W; recCanvas.height=H;
+      recStream=recCanvas.captureStream(30);
+      startCompositeLoop();
+    }catch(e){ recStream=null; }
+  }
+
+  // iOS or canvas capture failed: use raw camera stream
+  if(!recStream){
+    // Get video track from stream directly
+    const videoTrack=stream.getVideoTracks()[0];
+    if(videoTrack){
+      recStream=new MediaStream([videoTrack]);
+    } else {
+      recStream=stream;
+    }
+  }
 
   const mime=getBestMime();
   const opts=mime?{mimeType:mime}:{};
@@ -951,12 +967,22 @@ function startRecording(){
     mediaRecorder=new MediaRecorder(recStream,opts);
     mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
     mediaRecorder.onstop=saveRecording;
-    mediaRecorder.start(500); // 500ms chunks for reliability
+    mediaRecorder.start(500);
     isRecording=true;
     showToast('Recording…');
   }catch(e){
     console.error('MediaRecorder error:',e);
-    showToast('Recording not supported on this browser');
+    // Last resort: try with no mimeType
+    try{
+      mediaRecorder=new MediaRecorder(recStream);
+      mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
+      mediaRecorder.onstop=saveRecording;
+      mediaRecorder.start(500);
+      isRecording=true;
+      showToast('Recording… (fallback mode)');
+    }catch(e2){
+      showToast('Recording not supported: '+e2.message);
+    }
   }
 }
 
@@ -1008,23 +1034,40 @@ function saveRecording(){
   const blob=new Blob(recordedChunks,{type:mime});
   const ext=mime.includes('mp4')?'mp4':'webm';
   const filename='tatelift_'+EX_CONFIG[currentExercise].label+'_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.'+ext;
-  const url=URL.createObjectURL(blob);
 
-  // iOS Safari: can't do <a download>, open in new tab instead
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
+  // Try Web Share API first (iOS + Android native share sheet — includes Save to Files)
+  if(navigator.canShare&&navigator.canShare({files:[new File([blob],filename,{type:mime})]})){
+    navigator.share({files:[new File([blob],filename,{type:mime})],title:'TATELIFT Recording'})
+      .then(()=>showToast('Video shared!'))
+      .catch(e=>{
+        if(e.name!=='AbortError') fallbackSave(blob,filename,mime);
+      });
+    return;
+  }
+  fallbackSave(blob,filename,mime);
+}
+
+function fallbackSave(blob,filename,mime){
+  const url=URL.createObjectURL(blob);
+  // iOS: any browser on iOS uses WebKit engine — <a download> not supported
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
   if(isIOS){
-    const tab=window.open(url,'_blank');
-    if(!tab) showToast('Allow popups to save video');
-    else showToast('Video opened — long-press to save');
-    // revoke after delay to give tab time to load
-    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+    showToast('영상 열림 — 길게 눌러 저장', 5000);
+    setTimeout(()=>{
+      window.location.href=url;
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    }, 300);
   } else {
     const a=document.createElement('a');
-    a.href=url; a.download=filename;
+    a.style.display='none';
+    a.href=url;
+    a.download=filename;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+    setTimeout(()=>{
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 10000);
     showToast('Video saved!');
   }
 }
@@ -1042,8 +1085,18 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 // ── Controls ──────────────────────────────────────────────
 btnStart.addEventListener('click',()=>{
   if(!poseLandmarker) return;
-  if(tracking){handleStopSet();}
-  else{if(!camOn) return; requestWakeLock(); startCountdown();}
+  if(tracking){
+    handleStopSet();
+  } else {
+    if(!camOn) return;
+    // Reset display for new set
+    tracker.resetSet(); liveRpe=null; liveRepNum=0;
+    repTbody.innerHTML='';
+    mReps.textContent='0'; mTime.textContent='—'; mVloss.textContent='—'; mMean.textContent='—';
+    rpeVal.textContent='—'; rpeDesc.textContent='—'; rpeFill.style.width='0%';
+    requestWakeLock();
+    startCountdown();
+  }
 });
 
 btnReset.addEventListener('click',()=>{
@@ -1169,9 +1222,9 @@ function renderSetsTab(){
 
 // ── Toast ─────────────────────────────────────────────────
 let toastT;
-function showToast(msg){
+function showToast(msg, duration=2500){
   const t=$('#toast');t.textContent=msg;t.classList.add('show');
-  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2500);
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),duration);
 }
 function setStatus(msg){loadStatus.textContent=msg;}
 
