@@ -149,7 +149,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
 .rpe-ok{color:var(--teal)!important;}
 
 /* toast */
-#toast{position:fixed;bottom:calc(20px + var(--sb));left:50%;transform:translateX(-50%) translateY(30px);background:var(--s3);color:var(--text);font-size:11px;font-weight:500;padding:8px 16px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:400;}
+#toast{position:absolute;bottom:70px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--s3);color:var(--text);font-size:12px;font-weight:600;padding:9px 18px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:400;}
 #toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
 
 /* loading */
@@ -175,8 +175,6 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
   <div class="spinner"></div>
   <div class="load-status" id="load-status">Loading MediaPipe…</div>
 </div>
-
-<div id="toast"></div>
 
 <!-- Settings Drawer -->
 <div id="settings-drawer">
@@ -240,6 +238,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
     <div id="phase-badge">Ready</div>
     <!-- Multi-point tracking chips -->
     <div id="track-chips"></div>
+    <div id="toast"></div>
     <div id="countdown-overlay">
       <div id="countdown-num">3</div>
       <div id="countdown-label">Get into position…</div>
@@ -992,10 +991,8 @@ function handleStopSet(auto=false){
   releaseWakeLock();
 }
 
-// ── Recording (getDisplayMedia + crop to camera area) ────────
+// ── Recording (getDisplayMedia, crop camera+metrics) ─────────
 const camControls=document.getElementById('cam-controls');
-const repLog=[];
-let recStartTime=0;
 
 function getRecMime(){
   const order=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
@@ -1007,172 +1004,108 @@ function setRecUI(on){
   if(camControls) camControls.style.opacity=on?'0':'1';
 }
 
-// Composite loop: screen capture → crop to camera wrap → draw overlay text
 let compositeRafId=null;
 let _screenStream=null;
-let _screenVideo=null; // hidden <video> playing the screen capture
+let _screenVideo=null;
 
-function startCompositeLoop(){
+function startCompositeLoop(cropRect){
   if(compositeRafId) cancelAnimationFrame(compositeRafId);
+  const {sx,sy,sw,sh}=cropRect;
 
   function loop(){
-    if(!isRecording){compositeRafId=null; return;}
+    if(!isRecording){compositeRafId=null;return;}
     compositeRafId=requestAnimationFrame(loop);
     if(!_screenVideo||_screenVideo.readyState<2) return;
-
-    const camWrap=document.getElementById('camera-wrap');
-    const rect=camWrap.getBoundingClientRect();
-    const dpr=window.devicePixelRatio||1;
-
-    // Screen capture dimensions
-    const sw=_screenVideo.videoWidth;
-    const sh=_screenVideo.videoHeight;
-
-    // Map camWrap rect to screen capture coords
-    const scaleX=sw/window.innerWidth;
-    const scaleY=sh/window.innerHeight;
-
-    const sx=Math.round(rect.left*scaleX);
-    const sy=Math.round(rect.top*scaleY);
-    const sw2=Math.round(rect.width*scaleX);
-    const sh2=Math.round(rect.height*scaleY);
-
-    if(sw2<=0||sh2<=0) return;
-
-    recCanvas.width=sw2;
-    recCanvas.height=sh2;
-
-    // Crop: draw only camera area from screen capture
-    recCtx.drawImage(_screenVideo, sx, sy, sw2, sh2, 0, 0, sw2, sh2);
-
-    // Draw text overlay on top
-    drawVideoOverlay(sw2, sh2);
+    recCtx.drawImage(_screenVideo, sx, sy, sw, sh, 0, 0, recCanvas.width, recCanvas.height);
   }
   loop();
-}
-
-function drawVideoOverlay(W, H){
-  const repCount=tracker.repHistory.length;
-  const avgRpe=repCount
-    ?(tracker.repHistory.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1)
-    :'—';
-  const ex=EX_CONFIG[currentExercise].label;
-  const fs=Math.max(18, Math.round(H*0.045));
-  const pad=14;
-
-  recCtx.save();
-  recCtx.font=`700 ${fs}px 'Space Mono',monospace`;
-  recCtx.textBaseline='top';
-
-  // Left top: exercise + avg RPE
-  const l1=ex, l2=`Avg RPE: ${avgRpe}`;
-  const lw=Math.max(recCtx.measureText(l1).width, recCtx.measureText(l2).width)+20;
-  recCtx.fillStyle='rgba(0,0,0,0.6)';
-  _rrect(recCtx, pad, pad, lw, fs*2+20, 6);
-  recCtx.fill();
-  recCtx.fillStyle='#e06c00'; recCtx.fillText(l1, pad+10, pad+6);
-  recCtx.fillStyle='#00e5c8'; recCtx.fillText(l2, pad+10, pad+10+fs);
-
-  // Right top: rep count + current RPE
-  if(liveRepNum>0){
-    const r1=`Rep ${liveRepNum}`;
-    const r2=liveRpe!=null?`RPE ${liveRpe}`:'RPE —';
-    const rw=Math.max(recCtx.measureText(r1).width, recCtx.measureText(r2).width)+20;
-    const rx=W-pad-rw;
-    recCtx.fillStyle='rgba(0,0,0,0.6)';
-    _rrect(recCtx, rx, pad, rw, fs*2+20, 6);
-    recCtx.fill();
-    recCtx.fillStyle='#f0f0f0'; recCtx.fillText(r1, rx+10, pad+6);
-    const rpeCol=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
-    recCtx.fillStyle=liveRpe!=null?rpeCol:'#505050';
-    recCtx.fillText(r2, rx+10, pad+10+fs);
-  }
-
-  recCtx.restore();
-}
-
-function _rrect(ctx,x,y,w,h,r){
-  ctx.beginPath();
-  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
-  ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
-  ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
-  ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
-  ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
 }
 
 async function startRecording(){
   if(isRecording) return;
   recordedChunks=[];
-  repLog.length=0;
-  recStartTime=performance.now();
 
-  // Request screen capture — user picks "this tab"
+  // Ask for screen capture — preferCurrentTab pre-selects this tab on Chrome
   let screenStream;
   try{
     screenStream=await navigator.mediaDevices.getDisplayMedia({
-      video:{
-        displaySurface:'browser',
-        width:{ideal:1280},
-        height:{ideal:720},
-        frameRate:{ideal:30},
-      },
+      video:{preferCurrentTab:true, frameRate:{ideal:30}},
       audio:false,
-      preferCurrentTab:true, // Chrome hint to pre-select current tab
+      preferCurrentTab:true,
     });
   }catch(e){
-    showToast('화면 공유 취소됨');
+    showToast('화면 공유 취소');
     return;
   }
 
   _screenStream=screenStream;
-
-  // Create hidden video element to play screen capture
   _screenVideo=document.createElement('video');
   _screenVideo.srcObject=screenStream;
   _screenVideo.muted=true;
   _screenVideo.playsInline=true;
   await _screenVideo.play();
 
-  // Init recCanvas from camera-wrap size
+  // Wait for screen video to have dimensions
+  await new Promise(r=>setTimeout(r,300));
+
+  const svW=_screenVideo.videoWidth;
+  const svH=_screenVideo.videoHeight;
+  const scaleX=svW/window.innerWidth;
+  const scaleY=svH/window.innerHeight;
+
+  // Crop: camera-wrap top to metrics row bottom
   const camWrap=document.getElementById('camera-wrap');
-  const rect=camWrap.getBoundingClientRect();
-  recCanvas.width=Math.round(rect.width*(window.devicePixelRatio||1));
-  recCanvas.height=Math.round(rect.height*(window.devicePixelRatio||1));
+  const metricsEl=document.getElementById('metrics');
+  const camRect=camWrap.getBoundingClientRect();
+  const metRect=metricsEl.getBoundingClientRect();
 
-  // Start composite loop first to prime canvas
+  const sx=Math.round(camRect.left*scaleX);
+  const sy=Math.round(camRect.top*scaleY);
+  const sw=Math.round(camRect.width*scaleX);
+  // Height: from camera top to bottom of metrics row
+  const sh=Math.round((metRect.bottom-camRect.top)*scaleY);
+
+  recCanvas.width=sw;
+  recCanvas.height=sh;
+
   isRecording=true;
-  startCompositeLoop();
+  startCompositeLoop({sx,sy,sw,sh});
 
-  // Wait a moment for first frame
+  // Wait for first composite frame
   await new Promise(r=>setTimeout(r,200));
 
-  // captureStream from our composite recCanvas
+  // captureStream from composite canvas
   let recStream;
-  try{ recStream=recCanvas.captureStream(30); }
-  catch(e){
-    // Fallback: use screen stream directly
+  try{
+    recStream=recCanvas.captureStream(30);
+    // Validate track is active
+    if(!recStream.getVideoTracks().length||recStream.getVideoTracks()[0].readyState==='ended'){
+      throw new Error('empty track');
+    }
+  }catch(e){
+    // Fallback: use raw screen stream
     recStream=screenStream;
     if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
   }
 
   const mime=getRecMime();
   let mr;
-  try{ mr=new MediaRecorder(recStream, mime?{mimeType:mime}:{}); }
-  catch(e){ try{ mr=new MediaRecorder(recStream); }catch(e2){ showToast('녹화 미지원'); _cleanup(); return; } }
+  try{ mr=new MediaRecorder(recStream,mime?{mimeType:mime}:{}); }
+  catch(e){ try{mr=new MediaRecorder(recStream);}catch(e2){showToast('녹화 미지원');_cleanup();return;} }
 
-  mr.ondataavailable=e=>{ if(e.data&&e.data.size>0) recordedChunks.push(e.data); };
+  mr.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
   mr.onstop=saveRecording;
-  mr.onerror=e=>{ showToast('Rec err'); _cleanup(); };
+  mr.onerror=e=>{showToast('Rec err');_cleanup();};
 
-  // Handle user stopping screen share externally
-  screenStream.getVideoTracks()[0].addEventListener('ended', ()=>{
+  // If user stops screen share manually → stop set
+  screenStream.getVideoTracks()[0].addEventListener('ended',()=>{
     if(isRecording) stopRecording();
   });
 
   mr.start();
   mediaRecorder=mr;
   setRecUI(true);
-  showToast('REC ● (탭 선택 후 시작)');
+  showToast('REC ●');
 }
 
 function _cleanup(){
@@ -1185,7 +1118,6 @@ function _cleanup(){
 
 function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
-  const wasRecording=isRecording;
   isRecording=false;
   if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
   setRecUI(false);
@@ -1194,15 +1126,13 @@ function stopRecording(){
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
-      setTimeout(()=>{
-        try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}
-      },300);
+      setTimeout(()=>{try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}},400);
     }
-  }catch(e){ try{mediaRecorder.stop();}catch(e2){} }
+  }catch(e){try{mediaRecorder.stop();}catch(e2){}}
 }
 
 function saveRecording(){
-  if(!recordedChunks.length){ showToast('No video data'); return; }
+  if(!recordedChunks.length){showToast('No video data');return;}
   const mime=mediaRecorder?.mimeType||'video/webm';
   const blob=new Blob(recordedChunks,{type:mime});
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
@@ -1216,7 +1146,7 @@ function saveRecording(){
       if(navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:'TATELIFT'})
           .then(()=>showToast('✓ 저장 완료'))
-          .catch(e=>{ if(e.name!=='AbortError') directDownload(blob,filename,isIOS); });
+          .catch(e=>{if(e.name!=='AbortError')directDownload(blob,filename,isIOS);});
         return;
       }
     }catch(e){}
@@ -1239,7 +1169,7 @@ function directDownload(blob,filename,isIOS){
   requestAnimationFrame(()=>{
     a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
     showToast('✓ 다운로드 시작');
-    setTimeout(()=>{ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },20000);
+    setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},20000);
   });
 }
 
