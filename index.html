@@ -992,38 +992,11 @@ function handleStopSet(auto=false){
   releaseWakeLock();
 }
 
-// ── Recording ────────────────────────────────────────────────
+// ── Recording (canvas composite, no FFmpeg) ─────────────────
+// Strategy: dedicated RAF loop writes video+overlay to recCanvas
+// independently of MediaPipe loop → no flicker
+
 const camControls=document.getElementById('cam-controls');
-
-// FFmpeg lazy-load
-let _ffmpeg=null;
-let _ffmpegLoading=false;
-let _ffmpegReady=false;
-
-async function loadFFmpeg(){
-  if(_ffmpegReady) return true;
-  if(_ffmpegLoading) return false;
-  _ffmpegLoading=true;
-  try{
-    const {FFmpeg}=await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
-    const {fetchFile,toBlobURL}=await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
-    _ffmpeg=new FFmpeg();
-    const baseURL='https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-    await _ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`,'text/javascript'),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`,'application/wasm'),
-    });
-    window._ffetchFile=fetchFile;
-    _ffmpegReady=true;
-    return true;
-  }catch(e){
-    console.error('FFmpeg load failed:',e);
-    _ffmpegLoading=false;
-    return false;
-  }
-}
-
-// Rep event log: {time, repNum, rpe} — time = seconds since recStart
 const repLog=[];
 let recStartTime=0;
 
@@ -1033,135 +1006,157 @@ function getRecMime(){
   return '';
 }
 
+function setRecUI(on){
+  if(camControls) camControls.style.opacity=on?'0':'1';
+}
+
+let compositeRafId=null;
+
+function startCompositeLoop(){
+  if(compositeRafId) cancelAnimationFrame(compositeRafId);
+  const W=recCanvas.width, H=recCanvas.height;
+
+  function loop(){
+    if(!isRecording){compositeRafId=null; return;}
+    compositeRafId=requestAnimationFrame(loop);
+
+    // Draw video frame
+    try{
+      if(facingMode==='user'){
+        recCtx.save(); recCtx.scale(-1,1);
+        recCtx.drawImage(video,-W,0,W,H);
+        recCtx.restore();
+      } else {
+        recCtx.drawImage(video,0,0,W,H);
+      }
+    }catch(e){}
+
+    // Draw pose overlay (skeleton + dots from main canvas)
+    try{
+      if(canvas.width>0 && canvas.height>0)
+        recCtx.drawImage(canvas,0,0,W,H);
+    }catch(e){}
+
+    // Draw text overlays
+    drawVideoOverlay(W,H);
+  }
+  loop();
+}
+
+function drawVideoOverlay(W,H){
+  const repCount=tracker.repHistory.length;
+  const avgRpe=repCount
+    ?(tracker.repHistory.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1)
+    :'—';
+  const ex=EX_CONFIG[currentExercise].label;
+  const fs=Math.round(H*0.033);
+  const pad=14;
+
+  recCtx.save();
+  recCtx.font=`700 ${fs}px 'Space Mono',monospace`;
+  recCtx.textBaseline='top';
+
+  // Left top box
+  const l1=ex, l2=`Avg RPE: ${avgRpe}`;
+  const lw=Math.max(recCtx.measureText(l1).width, recCtx.measureText(l2).width);
+  recCtx.fillStyle='rgba(0,0,0,0.55)';
+  recCtx.beginPath();
+  _rrect(recCtx,pad,pad,lw+20,fs*2+20,6); recCtx.fill();
+  recCtx.fillStyle='#e06c00'; recCtx.fillText(l1,pad+10,pad+6);
+  recCtx.fillStyle='#00e5c8'; recCtx.fillText(l2,pad+10,pad+10+fs);
+
+  // Right top box
+  const r1=`Rep ${liveRepNum??0}`;
+  const r2=liveRpe!=null?`RPE ${liveRpe}`:'RPE —';
+  const rw=Math.max(recCtx.measureText(r1).width, recCtx.measureText(r2).width);
+  const rx=W-pad-rw-20;
+  recCtx.fillStyle='rgba(0,0,0,0.55)';
+  recCtx.beginPath();
+  _rrect(recCtx,rx,pad,rw+20,fs*2+20,6); recCtx.fill();
+  recCtx.fillStyle='#f0f0f0'; recCtx.fillText(r1,rx+10,pad+6);
+  const rpeCol=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
+  recCtx.fillStyle=liveRpe!=null?rpeCol:'#505050';
+  recCtx.fillText(r2,rx+10,pad+10+fs);
+
+  recCtx.restore();
+}
+
+function _rrect(ctx,x,y,w,h,r){
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}
+
 function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
   repLog.length=0;
   recStartTime=performance.now();
 
+  // Size recCanvas to 720p
+  const W=1280, H=720;
+  recCanvas.width=W; recCanvas.height=H;
+
+  // Draw first frame before captureStream so track is live
+  try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
+
+  let recStream;
+  try{ recStream=recCanvas.captureStream(30); }
+  catch(e){ recStream=stream; }
+
+  // Validate track is live
+  if(!recStream.getVideoTracks().length ||
+     recStream.getVideoTracks()[0].readyState==='ended'){
+    recStream=stream;
+  }
+
   const mime=getRecMime();
   let mr;
-  try{ mr=new MediaRecorder(stream,mime?{mimeType:mime}:{}); }
-  catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ showToast('녹화 미지원'); return; } }
+  try{ mr=new MediaRecorder(recStream, mime?{mimeType:mime}:{}); }
+  catch(e){ try{ mr=new MediaRecorder(recStream); }
+    catch(e2){ showToast('녹화 미지원'); return; } }
 
   mr.ondataavailable=e=>{ if(e.data&&e.data.size>0) recordedChunks.push(e.data); };
-  mr.onstop=processRecording;
+  mr.onstop=saveRecording;
   mr.onerror=e=>{ showToast('Rec err'); isRecording=false; setRecUI(false); };
-  mr.start(); // no timeslice = seekable
+  mr.start(); // no timeslice → seekable
   mediaRecorder=mr;
   isRecording=true;
   setRecUI(true);
+  startCompositeLoop(); // start drawing AFTER MediaRecorder is running
   showToast('REC ●');
-
-  // Start preloading FFmpeg in background
-  loadFFmpeg();
-}
-
-let compositeRafId=null;
-function startCompositeLoop(){}
-function drawCompositeFrame(){}
-function drawVideoOverlayText(){}
-
-function setRecUI(on){
-  if(camControls) camControls.style.opacity=on?'0':'1';
 }
 
 function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
-  isRecording=false;
+  isRecording=false; // stops composite loop
   setRecUI(false);
-  try{
-    if(mediaRecorder.state==='recording'){
-      mediaRecorder.requestData();
-      setTimeout(()=>{ try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){} },300);
-    }
-  }catch(e){ try{ mediaRecorder.stop(); }catch(e2){} }
-}
-
-// Called when raw recording is done
-async function processRecording(){
-  if(!recordedChunks.length){ showToast('No video data'); return; }
-
-  const rawMime=mediaRecorder?.mimeType||'video/webm';
-  const rawBlob=new Blob(recordedChunks,{type:rawMime});
-  const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
-  const exLabel=EX_CONFIG[currentExercise].label.replace(/\s+/g,'_');
-  const filename=`tatelift_${exLabel}_${ts}.mp4`;
-
-  // Try FFmpeg overlay
-  if(_ffmpegReady && repLog.length>0){
-    showToast('영상 처리 중…', 60000);
+  setTimeout(()=>{
     try{
-      const out=await burnOverlay(rawBlob, repLog, filename);
-      if(out){ doSave(out, filename); return; }
-    }catch(e){ console.error('FFmpeg overlay failed:',e); }
-  }
-
-  // Fallback: save raw
-  doSave(rawBlob, filename);
+      if(mediaRecorder.state==='recording'){
+        mediaRecorder.requestData();
+        setTimeout(()=>{
+          try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){}
+        },300);
+      }
+    }catch(e){ try{mediaRecorder.stop();}catch(e2){} }
+  },100); // small delay so last composite frame is captured
 }
 
-async function burnOverlay(rawBlob, log, filename){
-  const ff=_ffmpeg;
-  const fetchFile=window._ffetchFile;
-  if(!ff||!fetchFile) return null;
-
-  // Write input
-  await ff.writeFile('input.webm', await fetchFile(rawBlob));
-
-  // Build drawtext filter chain
-  // Left top: exercise name + avg RPE
-  const ex=EX_CONFIG[currentExercise].label;
-  const avgRpe=log.length?(log.reduce((s,r)=>s+r.rpe,0)/log.length).toFixed(1):'—';
-
-  const fontColor='white';
-  const boxColor='black@0.5';
-  const fs=36; // font size
-
-  // Static left-top text (whole video)
-  let filters=[
-    `drawtext=text='${ex}':fontsize=${fs}:fontcolor=${fontColor}:box=1:boxcolor=${boxColor}:boxborderw=8:x=20:y=20`,
-    `drawtext=text='Avg RPE\: ${avgRpe}':fontsize=${fs}:fontcolor=00e5c8:box=1:boxcolor=${boxColor}:boxborderw=8:x=20:y=${20+fs+10}`,
-  ];
-
-  // Dynamic right-top: rep number + RPE, each shown from its timestamp
-  log.forEach((r,i)=>{
-    const t=r.time.toFixed(2);
-    const nextT=i+1<log.length?log[i+1].time.toFixed(2):'9999';
-    const rpeCol=r.rpe>=9?'ff5555':r.rpe>=8?'ffc107':r.rpe>=7?'e06c00':'00e5c8';
-    filters.push(
-      `drawtext=text='Rep ${r.repNum}':fontsize=${fs}:fontcolor=${fontColor}:box=1:boxcolor=${boxColor}:boxborderw=8:x=w-text_w-20:y=20:enable='between(t,${t},${nextT})'`,
-      `drawtext=text='RPE ${r.rpe}':fontsize=${fs}:fontcolor=${rpeCol}:box=1:boxcolor=${boxColor}:boxborderw=8:x=w-text_w-20:y=${20+fs+10}:enable='between(t,${t},${nextT})'`
-    );
-  });
-
-  const vf=filters.join(',');
-
-  await ff.exec([
-    '-i','input.webm',
-    '-vf',vf,
-    '-c:v','libx264',
-    '-preset','ultrafast',
-    '-crf','28',
-    '-an', // no audio
-    '-movflags','+faststart',
-    'output.mp4'
-  ]);
-
-  const data=await ff.readFile('output.mp4');
-  await ff.deleteFile('input.webm');
-  await ff.deleteFile('output.mp4');
-
-  return new Blob([data.buffer],{type:'video/mp4'});
-}
-
-function doSave(blob, filename){
+function saveRecording(){
+  if(!recordedChunks.length){ showToast('No video data'); return; }
+  const mime=mediaRecorder?.mimeType||'video/webm';
+  const blob=new Blob(recordedChunks,{type:mime});
+  const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
+  const exLabel=EX_CONFIG[currentExercise].label.replace(/[^a-zA-Z0-9]/g,'_');
+  const filename=`tatelift_${exLabel}_${ts}.mp4`;
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  const mime=blob.type||'video/mp4';
 
   if(navigator.canShare){
     try{
-      const file=new File([blob],filename,{type:mime});
+      const file=new File([blob],filename,{type:'video/mp4'});
       if(navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:'TATELIFT'})
           .then(()=>showToast('✓ 저장 완료'))
@@ -1351,20 +1346,8 @@ function setStatus(msg){loadStatus.textContent=msg;}
 window.addEventListener('resize',resizeCanvas);
 
 // ── Boot ──────────────────────────────────────────────────
-// Expose for console debugging
-window._tatelift={
-  get ffmpegReady(){ return _ffmpegReady; },
-  get ffmpeg(){ return _ffmpeg; },
-  loadFFmpeg,
-};
-
 initMP();
 requestWakeLock();
-// Start loading FFmpeg immediately on page load (background)
-loadFFmpeg().then(ok=>{
-  if(ok) console.log('[TATELIFT] FFmpeg ready');
-  else console.warn('[TATELIFT] FFmpeg load failed');
-});
 </script>
 </body>
 </html>
