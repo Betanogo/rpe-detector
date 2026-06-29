@@ -84,6 +84,8 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
 #cam-controls button{pointer-events:all;}
 .cam-fab{width:44px;height:44px;border-radius:50%;background:rgba(13,13,13,0.75);border:2px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);transition:all .2s;}
 .cam-fab:hover{border-color:var(--acc);color:var(--acc);}
+#btn-record.recording{background:var(--danger);border-color:var(--danger);color:#fff;animation:recPulse 1s ease-in-out infinite;}
+@keyframes recPulse{0%,100%{opacity:1}50%{opacity:.55}}
 #btn-cam-off.off{background:var(--s3);border-color:var(--text3);color:var(--text3);}
 
 /* ── PANEL ── */
@@ -181,7 +183,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
 
     <div class="setting-row">
       <div><div class="setting-label">Auto-Record</div><div class="setting-desc">세트 시작/종료와 녹화 자동 연동</div></div>
-      <label class="toggle"><input type="checkbox" id="tog-record"/><span class="toggle-slider"></span></label>
+      <label class="toggle"><input type="checkbox" id="tog-record" checked/><span class="toggle-slider"></span></label>
     </div>
 
     <div class="setting-row">
@@ -564,7 +566,7 @@ let currentExercise='SQ';
 let weightKg=null, weightUnit='kg';
 let countingDown=false;
 let setHistory=[], setNumber=0;
-let autoRecord=false, useWakeLock=true, useAutoStop=true, autoStopSec=4;
+let autoRecord=true, useWakeLock=true, useAutoStop=true, autoStopSec=4;
 let wakeLockSentinel=null;
 let mediaRecorder=null, recordedChunks=[], isRecording=false, camOn=true;
 let liveRpe=null, liveRepNum=0;
@@ -919,94 +921,90 @@ function handleStopSet(auto=false){
 }
 
 // ── Recording ─────────────────────────────────────────────
-// Simple: always record raw camera stream directly.
-// Canvas compositing (overlay) skipped — too unreliable across devices.
+function getBtnRecord(){ return document.getElementById('btn-record'); }
+
+function setRecordingUI(on){
+  const btn=getBtnRecord(); if(!btn) return;
+  if(on){btn.textContent='⏹';btn.classList.add('recording');}
+  else{btn.textContent='⏺';btn.classList.remove('recording');}
+}
 
 function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
 
-  // Always use the raw camera video track — most reliable across all browsers
   const videoTrack=stream.getVideoTracks()[0];
-  if(!videoTrack){showToast('No camera track');return;}
+  if(!videoTrack||videoTrack.readyState==='ended'){
+    showToast('카메라 트랙 없음'); return;
+  }
+
+  // Use only the video track in a fresh MediaStream
   const recStream=new MediaStream([videoTrack]);
 
-  // Find a supported mimeType
-  const mimeOrder=[
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm',
-    'video/mp4',
-    '',
-  ];
-  let mime='';
-  for(const m of mimeOrder){
-    if(!m||MediaRecorder.isTypeSupported(m)){mime=m;break;}
+  // Find supported mimeType
+  const mimes=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4',''];
+  let chosenMime='';
+  for(const m of mimes){
+    try{ if(!m||MediaRecorder.isTypeSupported(m)){chosenMime=m;break;} }catch(e){}
   }
 
   try{
-    const opts=mime?{mimeType:mime}:{};
+    const opts=chosenMime?{mimeType:chosenMime}:{};
     mediaRecorder=new MediaRecorder(recStream,opts);
   }catch(e){
-    try{mediaRecorder=new MediaRecorder(recStream);}
-    catch(e2){showToast('Recording not supported');return;}
+    try{ mediaRecorder=new MediaRecorder(recStream); }
+    catch(e2){ showToast('녹화 미지원: '+e2.message); return; }
   }
 
   mediaRecorder.ondataavailable=e=>{
-    if(e.data&&e.data.size>0){
-      recordedChunks.push(e.data);
-    }
+    if(e.data&&e.data.size>0) recordedChunks.push(e.data);
   };
   mediaRecorder.onstop=saveRecording;
-  mediaRecorder.onerror=e=>showToast('Rec error: '+e.error?.message);
-  mediaRecorder.start(1000); // 1s chunks
+  mediaRecorder.onerror=e=>{ showToast('Rec err: '+(e.error?.message||e.type)); isRecording=false; setRecordingUI(false); };
+
+  // timeslice=1000: fire ondataavailable every 1s
+  mediaRecorder.start(1000);
   isRecording=true;
+  setRecordingUI(true);
   showToast('REC ●');
 }
 
-let compositeRafId=null; // kept for compat, unused now
-function startCompositeLoop(){}
+let compositeRafId=null;
+function startCompositeLoop(){} // noop — using raw stream
 
 function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
   isRecording=false;
-  try{
-    // request any buffered data then stop after short delay
-    if(mediaRecorder.state==='recording'){
-      mediaRecorder.requestData();
-      setTimeout(()=>{
-        if(mediaRecorder.state!=='inactive') mediaRecorder.stop();
-      },300);
-    }
-  }catch(e){
-    try{mediaRecorder.stop();}catch(e2){}
+  setRecordingUI(false);
+  const state=mediaRecorder.state;
+  if(state==='recording'||state==='paused'){
+    try{ mediaRecorder.requestData(); }catch(e){}
+    setTimeout(()=>{
+      try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){}
+    },400);
   }
 }
 
 function saveRecording(){
-  if(recordedChunks.length===0){
-    showToast('No video data recorded');
-    return;
-  }
+  if(recordedChunks.length===0){ showToast('No video data recorded'); return; }
   const mime=mediaRecorder?.mimeType||recordedChunks[0]?.type||'video/webm';
   const blob=new Blob(recordedChunks,{type:mime});
   const ext=mime.includes('mp4')?'mp4':'webm';
-  const filename='tatelift_'
-    +EX_CONFIG[currentExercise].label+'_'
-    +new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')
-    +'.'+ext;
-
+  const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
+  const filename=`tatelift_${EX_CONFIG[currentExercise].label}_${ts}.${ext}`;
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
 
-  // Try Web Share API (Android Chrome + iOS Safari)
+  // Web Share API — best on mobile
   if(navigator.canShare){
-    const file=new File([blob],filename,{type:mime});
-    if(navigator.canShare({files:[file]})){
-      navigator.share({files:[file],title:'TATELIFT'})
-        .then(()=>showToast('✓ 저장 완료'))
-        .catch(e=>{if(e.name!=='AbortError') directDownload(blob,filename,isIOS);});
-      return;
-    }
+    try{
+      const file=new File([blob],filename,{type:mime});
+      if(navigator.canShare({files:[file]})){
+        navigator.share({files:[file],title:'TATELIFT'})
+          .then(()=>showToast('✓ 저장 완료'))
+          .catch(e=>{ if(e.name!=='AbortError') directDownload(blob,filename,isIOS); });
+        return;
+      }
+    }catch(e){}
   }
   directDownload(blob,filename,isIOS);
 }
@@ -1015,21 +1013,18 @@ function directDownload(blob,filename,isIOS){
   const url=URL.createObjectURL(blob);
   if(isIOS){
     window.location.href=url;
-    showToast('길게 눌러 저장하세요',5000);
+    showToast('길게 눌러 저장',5000);
     setTimeout(()=>URL.revokeObjectURL(url),120000);
     return;
   }
-  // Android / Desktop
   const a=document.createElement('a');
-  a.href=url;
-  a.download=filename;
-  a.style.position='fixed';
-  a.style.opacity='0';
+  a.href=url; a.download=filename;
+  a.style.cssText='position:fixed;opacity:0;pointer-events:none;';
   document.body.appendChild(a);
   requestAnimationFrame(()=>{
-    a.click();
+    a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
     showToast('✓ 다운로드 시작');
-    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},15000);
+    setTimeout(()=>{ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },20000);
   });
 }
 
