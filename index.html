@@ -451,63 +451,58 @@ class EMA{constructor(a=0.3){this.a=a;this.v=null;}
   update(x){this.v=this.v===null?x:this.a*x+(1-this.a)*this.v;return this.v;}
   reset(){this.v=null;}}
 
-// ── RepTracker ────────────────────────────────────────────
+// ── RepTracker (pure position-based) ─────────────────────
+// Uses a sliding window of Y positions to determine movement direction.
+// Works regardless of speed — no velocity threshold issues.
 const Phase=Object.freeze({WAITING:'WAITING',DESCENDING:'DESCENDING',BOTTOM:'BOTTOM',ASCENDING:'ASCENDING'});
 
 class RepTracker{
   constructor(onRep){
-    this.onRep=onRep; this.repHistory=[];
-    this._ema=new EMA(0.4);  this._velEMA=new EMA(0.3); // pos: moderate, velDisplay: smoothed
+    this.onRep=onRep;
+    this.repHistory=[];
+    this._emaPos=new EMA(0.5); // light smoothing for position
     this._reset();
   }
 
-  // poseLm: pose landmarks array | null
-  // handLms: array of hand landmark arrays (each hand) | []
   update(poseLm, handLms, exKey, now=performance.now(), colorBandPt=null){
     const cfg=EX_CONFIG[exKey]; if(!cfg) return null;
     const primary=cfg.trackGroups[0];
 
-    // Resolve primary tracking point Y
-    let primaryY=this._resolveY(primary, poseLm, handLms);
-    if(primaryY===null && colorBandPt!==null){
-      primaryY=colorBandPt.y;
-    } else if(primaryY!==null && colorBandPt!==null){
-      primaryY=(primaryY*0.6 + colorBandPt.y*0.4);
-    }
-    if(primaryY===null) return null;
+    let rawY=this._resolveY(primary, poseLm, handLms);
+    if(rawY===null && colorBandPt) rawY=colorBandPt.y;
+    else if(rawY!==null && colorBandPt) rawY=rawY*0.6+colorBandPt.y*0.4;
+    if(rawY===null) return null;
 
-    const smoothY=this._ema.update(primaryY);
+    const y=this._emaPos.update(rawY);
 
-    // Raw velocity (frame-to-frame, no EMA) for accurate phase detection
-    let rawVel=0, vel=0;
-    if(this._prev){
-      const dt=Math.max((now-this._prev.now), 1);
-      rawVel=(smoothY-this._prev.y)/dt;
-      vel=this._velEMA.update(rawVel);
-    }
+    // Velocity for display bar only
+    let vel=0;
+    if(this._prevY!==null) vel=(y-this._prevY);
+    this._prevY=y;
 
-    // Use raw velocity for phase transitions (responsive)
-    // Use EMA velocity for display/bar only
-    const VEL_THRESH=0.00006;
-    const isDescending=rawVel>VEL_THRESH;
-    const isAscending=rawVel<-VEL_THRESH;
+    // Keep a window of recent Y values (100ms worth at 30fps = ~3 frames)
+    // We compare current Y against recent peak/trough to detect direction
+    this._buf.push({y,t:now});
+    if(this._buf.length>12) this._buf.shift(); // keep ~400ms
 
-    this._fsm({y:smoothY,vel,rawVel,isDescending,isAscending,now});
-    this._prev={y:smoothY,now};
+    this._fsm(y, now);
 
-    // Resolve all group positions for overlay rendering
     const groupPositions=cfg.trackGroups.map(g=>({
       ...g,
-      pts: this._resolvePoints(g, poseLm, handLms),
+      pts:this._resolvePoints(g,poseLm,handLms),
     }));
 
-    return {phase:this._phase,vel,repCount:this.repHistory.length,
+    return {
+      phase:this._phase,
+      vel:vel*30, // approximate vel/s for display
+      repCount:this.repHistory.length,
       lastRep:this.repHistory[this.repHistory.length-1]??null,
-      groupPositions};
+      groupPositions,
+    };
   }
 
   _resolveY(group, poseLm, handLms){
-    const pts=this._resolvePoints(group, poseLm, handLms);
+    const pts=this._resolvePoints(group,poseLm,handLms);
     if(!pts.length) return null;
     return pts.reduce((s,p)=>s+p.y,0)/pts.length;
   }
@@ -516,18 +511,13 @@ class RepTracker{
     if(group.source==='pose'){
       if(!poseLm||poseLm.length<25) return [];
       const coords=group.indices.map(i=>poseLm[i]).filter(Boolean);
-      if(coords.some(c=>(c.visibility??1)<0.35)) return [];
+      if(coords.some(c=>(c.visibility??1)<0.15)) return []; // relaxed for shoulder/head
       return coords;
     } else {
-      // hand: use the hand closest to the center, or average both hands
-      // Hand landmark 0 = wrist, 9 = middle MCP (palm center)
       if(!handLms||!handLms.length) return [];
-      // Average across detected hands
       const allPts=[];
       handLms.forEach(hand=>{
-        group.indices.forEach(i=>{
-          if(hand[i]) allPts.push(hand[i]);
-        });
+        group.indices.forEach(i=>{if(hand[i])allPts.push(hand[i]);});
       });
       return allPts;
     }
@@ -535,85 +525,118 @@ class RepTracker{
 
   resetSet(){
     this.repHistory=[];
-    this._ema.reset(); this._velEMA.reset(); this._reset();
+    this._emaPos.reset();
+    this._reset();
   }
 
   _reset(){
-    this._phase=Phase.WAITING; this._prev=null;
-    this._bottomY=null; this._topY=null;
-    this._ascentStart=null; this._repStart=null;
-    this._peakY=null;
-    this._descentFrames=0; this._stillFrames=0;
-    this._posHistory=[]; // rolling position buffer
+    this._phase=Phase.WAITING;
+    this._prevY=null;
+    this._buf=[];
+    this._localMax=null; // highest Y seen (= lowest physical position)
+    this._localMin=null; // lowest Y seen (= highest physical position)
+    this._repStart=null;
+    this._ascentStart=null;
+    this._downCount=0;
+    this._upCount=0;
+    this._stillCount=0;
   }
 
-  _fsm({y,vel,rawVel,isDescending,isAscending,now}){
-    // Use smoothed velocity (vel) for direction — reliable at all speeds
-    // vel > 0 = moving down (in image coords), vel < 0 = moving up
-    const T=0.00008; // very low threshold — catches even slow reps
-    const goingDown = vel >  T;
-    const goingUp   = vel < -T;
+  // Sliding window direction detection
+  _direction(){
+    const b=this._buf;
+    if(b.length<4) return 0;
+    const mid=Math.floor(b.length/2);
+    const recent=b.slice(mid).reduce((s,e)=>s+e.y,0)/(b.length-mid);
+    const older=b.slice(0,mid).reduce((s,e)=>s+e.y,0)/mid;
+    const diff=recent-older;
+    const THRESH=0.003;
+    if(diff>THRESH) return 1;   // DOWN
+    if(diff<-THRESH) return -1; // UP
+    return 0;
+  }
+
+  _fsm(y, now){
+    const dir=this._direction();
+    const goingDown=(dir===1);
+    const goingUp=(dir===-1);
 
     switch(this._phase){
       case Phase.WAITING:
         if(goingDown){
-          this._descentFrames++;
-          if(this._descentFrames>=4){
+          this._downCount++;
+          if(this._downCount>=3){
             this._phase=Phase.DESCENDING;
-            this._descentFrames=0;
+            this._downCount=0; this._upCount=0;
             this._repStart=now;
-            this._topY=y;
+            this._localMax=y; this._localMin=y;
           }
         } else {
-          this._descentFrames=Math.max(0,this._descentFrames-1);
+          this._downCount=Math.max(0,this._downCount-1);
         }
         break;
 
       case Phase.DESCENDING:
-        if(this._bottomY===null) this._bottomY=y;
-        if(y>this._bottomY) this._bottomY=y;
-        if(goingUp) this._phase=Phase.BOTTOM;
+        if(y>this._localMax) this._localMax=y;
+        if(goingUp){
+          this._upCount++;
+          if(this._upCount>=2){
+            this._phase=Phase.BOTTOM;
+            this._upCount=0; this._downCount=0;
+          }
+        } else {
+          this._upCount=Math.max(0,this._upCount-1);
+        }
         break;
 
       case Phase.BOTTOM:
-        // Wait for clear upward movement
         if(goingUp){
-          this._phase=Phase.ASCENDING;
-          this._ascentStart=now;
-          this._stillFrames=0;
-        }
-        // Bail if we start going down again without ascending (false bottom)
-        if(goingDown && this._bottomY!==null){
-          if(this._bottomY===null) this._bottomY=y;
-          if(y>this._bottomY) this._bottomY=y;
+          this._upCount++;
+          if(this._upCount>=2){
+            this._phase=Phase.ASCENDING;
+            this._ascentStart=now;
+            this._upCount=0; this._downCount=0; this._stillCount=0;
+          }
+        } else {
+          this._upCount=Math.max(0,this._upCount-1);
         }
         break;
 
       case Phase.ASCENDING:{
         const dur=(now-this._ascentStart)/1000;
+        if(y<(this._localMin??y)) this._localMin=y;
 
-        // Still counter: increment when barely moving either way
-        if(Math.abs(vel)<T*1.5) this._stillFrames++;
-        else this._stillFrames=Math.max(0,this._stillFrames-1);
-
-        // (A) Next rep: going down again after at least 0.5s ascending
-        const nextRep = goingDown && dur>0.5;
-        // (B) Lockout: held still ~1.5s at top
-        const locked = this._stillFrames>=45 && dur>0.5;
-
-        if(nextRep||locked){
-          const totalDur=this._repStart?((now-this._repStart)/1000):dur;
-          if(totalDur>=0.8&&totalDur<=30) this._completeRep(totalDur,dur,now);
-          this._phase=Phase.WAITING;
-          this._bottomY=null; this._topY=null;
-          this._peakY=null; this._stillFrames=0; this._repStart=null;
-          this._posHistory=[];
+        if(goingDown){
+          this._downCount++;
+          if(this._downCount>=2 && dur>0.3){
+            const totalDur=this._repStart?((now-this._repStart)/1000):dur;
+            if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
+            // Immediately transition to next descending rep
+            this._phase=Phase.DESCENDING;
+            this._downCount=0; this._upCount=0; this._stillCount=0;
+            this._repStart=now;
+            this._localMax=y; this._localMin=y;
+          }
+        } else {
+          this._downCount=Math.max(0,this._downCount-1);
         }
+
+        if(!goingDown&&!goingUp) this._stillCount++;
+        else this._stillCount=0;
+
+        // Held still at top = last rep
+        if(this._stillCount>=30 && dur>0.3){
+          const totalDur=this._repStart?((now-this._repStart)/1000):dur;
+          if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
+          this._phase=Phase.WAITING;
+          this._downCount=0; this._upCount=0; this._stillCount=0;
+          this._repStart=null; this._localMax=null; this._localMin=null;
+        }
+
         if(dur>30){
           this._phase=Phase.WAITING;
-          this._bottomY=null; this._topY=null;
-          this._peakY=null; this._stillFrames=0; this._repStart=null;
-          this._posHistory=[];
+          this._downCount=0; this._upCount=0; this._stillCount=0;
+          this._repStart=null; this._localMax=null; this._localMin=null;
         }
         break;}
     }
@@ -622,14 +645,13 @@ class RepTracker{
   _completeRep(totalDur, concentricDur, now){
     const n=this.repHistory.length+1;
     const {rpe,label}=lookupRPE(totalDur);
-    const rep={
+    this.repHistory.push({
       repNumber:n,
       totalDuration:+totalDur.toFixed(3),
       concentricDuration:+concentricDur.toFixed(3),
       rpe,rpeLabel:label,timestamp:now
-    };
-    this.repHistory.push(rep);
-    this.onRep?.(rep,[...this.repHistory]);
+    });
+    this.onRep?.(this.repHistory[this.repHistory.length-1],[...this.repHistory]);
   }
 }
 
@@ -1089,8 +1111,21 @@ async function startRecording(){
   _screenVideo.srcObject=screenStream;
   _screenVideo.muted=true;
   _screenVideo.playsInline=true;
+  _screenVideo.autoplay=true;
+  document.body.appendChild(_screenVideo); // must be in DOM on some browsers
+  _screenVideo.style.cssText='position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;';
   await _screenVideo.play().catch(()=>{});
-  await new Promise(r=>setTimeout(r,400));
+
+  // Wait until video has real dimensions (app back in foreground)
+  await new Promise(res=>{
+    const check=()=>{
+      if(_screenVideo.videoWidth>0&&_screenVideo.videoHeight>0){res();}
+      else setTimeout(check,100);
+    };
+    check();
+    setTimeout(res,3000); // max 3s wait
+  });
+  await new Promise(r=>setTimeout(r,200)); // extra settle time
 
   const svW=_screenVideo.videoWidth||window.innerWidth;
   const svH=_screenVideo.videoHeight||window.innerHeight;
@@ -1164,7 +1199,10 @@ function stopRecording(){
   setRecUI(false);
   if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
   if(_screenStream){_screenStream.getTracks().forEach(t=>t.stop());_screenStream=null;}
-  if(_screenVideo){_screenVideo.srcObject=null;_screenVideo=null;}
+  if(_screenVideo){
+    try{document.body.removeChild(_screenVideo);}catch(e){}
+    _screenVideo.srcObject=null;_screenVideo=null;
+  }
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
@@ -1183,19 +1221,7 @@ function saveRecording(){
   const exLabel=EX_CONFIG[currentExercise].label.replace(/[^a-zA-Z0-9]/g,'_');
   const filename=`tatelift_${exLabel}_${ts}.${ext}`;
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-
-  if(navigator.canShare){
-    try{
-      const shareMime=isRealMp4?'video/mp4':'video/webm';
-      const file=new File([blob],filename,{type:shareMime});
-      if(navigator.canShare({files:[file]})){
-        navigator.share({files:[file],title:'TATELIFT'})
-          .then(()=>showToast('✓ 저장 완료'))
-          .catch(e=>{if(e.name!=='AbortError')directDownload(blob,filename,isIOS);});
-        return;
-      }
-    }catch(e){}
-  }
+  // Always direct download — no share sheet
   directDownload(blob,filename,isIOS);
 }
 
