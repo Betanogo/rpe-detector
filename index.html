@@ -774,6 +774,7 @@ function startCountdown(){
       tracking=true;
       lastMoveTime=performance.now();
       btnStart.textContent='⏸ Stop'; btnStart.classList.add('stopping');
+      if(autoRecord&&!isRecording) startRec();
       detectLoop();
     }
   },1000);
@@ -799,133 +800,133 @@ function stopSet(auto=false){
   releaseWakeLock();
 }
 
-// ── Recording (getDisplayMedia → crop → mp4) ──────────────
-let _screenStream=null;
-let _screenVideo=null;
-let _cropRaf=null;
+// ── Recording (canvas composite — no popup) ───────────────
+// Draws video + pose overlay + UI text onto recCanvas each frame
+// then captureStream() from recCanvas → MediaRecorder
+// One stream, no second camera open, no flicker
+
+let _recRaf=null;
 
 function getMime(){
-  for(const m of['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']){
+  for(const m of['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']){
     try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}
   }
   return '';
 }
 
-// Called directly from user gesture (btnStart click)
-async function startRec(){
-  if(isRecording) return;
+function startRec(){
+  if(isRecording||!stream) return;
   chunks=[];
 
-  // Request screen capture — must be in user gesture context
-  try{
-    _screenStream=await navigator.mediaDevices.getDisplayMedia({
-      video:{preferCurrentTab:true, frameRate:{ideal:30}},
-      audio:false,
-      preferCurrentTab:true,
-    });
-  }catch(e){
-    showToast('화면 공유 취소');
-    return;
-  }
+  // Size recCanvas to match camera
+  const W=video.videoWidth||1280;
+  const H=video.videoHeight||720;
+  recCanvas.width=W; recCanvas.height=H;
 
-  // Hidden video element to play screen stream
-  _screenVideo=document.createElement('video');
-  _screenVideo.srcObject=_screenStream;
-  _screenVideo.muted=true;
-  _screenVideo.playsInline=true;
-  _screenVideo.style.cssText='position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;';
-  document.body.appendChild(_screenVideo);
-  await _screenVideo.play().catch(()=>{});
-
-  // Wait for screen video to have real dimensions
-  await new Promise(res=>{
-    const check=()=>{
-      if(_screenVideo.videoWidth>0) res();
-      else setTimeout(check,50);
-    };
-    check();
-    setTimeout(res,3000);
-  });
-  await new Promise(r=>setTimeout(r,300));
-
-  // Calculate crop: from top of #app to bottom of #metrics
-  const appEl=document.getElementById('app');
-  const metricsEl=document.getElementById('metrics');
-  const appRect=appEl.getBoundingClientRect();
-  const metRect=metricsEl.getBoundingClientRect();
-
-  const svW=_screenVideo.videoWidth;
-  const svH=_screenVideo.videoHeight;
-  const scaleX=svW/window.innerWidth;
-  const scaleY=svH/window.innerHeight;
-
-  const sx=Math.round(appRect.left*scaleX);
-  const sy=Math.round(appRect.top*scaleY);
-  const sw=Math.round(appRect.width*scaleX);
-  const sh=Math.round((metRect.bottom-appRect.top)*scaleY);
-
-  recCanvas.width=sw;
-  recCanvas.height=Math.max(sh,1);
-
-  // Start composite loop: screen → crop → recCanvas
-  isRecording=true;
-  _startCropLoop(sx,sy,sw,sh);
-
-  // Wait one frame so canvas has content before captureStream
-  await new Promise(r=>setTimeout(r,100));
+  // Prime canvas with one frame so captureStream gets a live track
+  try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
 
   let recStream;
   try{
     recStream=recCanvas.captureStream(30);
-    if(!recStream.getVideoTracks().length||
-       recStream.getVideoTracks()[0].readyState==='ended') throw new Error('empty');
+    const t=recStream.getVideoTracks()[0];
+    if(!t||t.readyState==='ended') throw new Error('empty');
   }catch(e){
-    // Fallback: use screen stream directly
-    recStream=_screenStream;
-    if(_cropRaf){cancelAnimationFrame(_cropRaf);_cropRaf=null;}
+    // Fallback: raw camera stream
+    recStream=stream;
   }
 
   const mime=getMime();
   let mr;
   try{mr=new MediaRecorder(recStream,mime?{mimeType:mime}:{});}
-  catch(e){try{mr=new MediaRecorder(recStream);}catch(e2){_cleanupRec();return;}}
+  catch(e){try{mr=new MediaRecorder(recStream);}catch(e2){showToast('Rec not supported');return;}}
 
   mr.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data);};
   mr.onstop=saveRec;
-  mr.onerror=()=>{showToast('Rec error');_cleanupRec();};
-  mr.start();
+  mr.onerror=e=>{showToast('Rec error');isRecording=false;};
+  mr.start(200); // 200ms chunks for reliability
   mediaRecorder=mr;
+  isRecording=true;
 
-  // If user stops screen share manually
-  _screenStream.getVideoTracks()[0].addEventListener('ended',()=>{
-    if(isRecording) stopRec();
-  });
+  // Start composite loop
+  _startRecLoop(W,H);
 }
 
-function _startCropLoop(sx,sy,sw,sh){
-  if(_cropRaf) cancelAnimationFrame(_cropRaf);
+function _startRecLoop(W,H){
+  if(_recRaf) cancelAnimationFrame(_recRaf);
   function loop(){
-    if(!isRecording){_cropRaf=null;return;}
-    _cropRaf=requestAnimationFrame(loop);
-    if(!_screenVideo||_screenVideo.readyState<2) return;
-    recCtx.drawImage(_screenVideo,sx,sy,sw,sh,0,0,recCanvas.width,recCanvas.height);
+    if(!isRecording){_recRaf=null;return;}
+    _recRaf=requestAnimationFrame(loop);
+    // Draw camera frame
+    try{
+      if(facingMode==='user'){
+        recCtx.save();recCtx.scale(-1,1);
+        recCtx.drawImage(video,-W,0,W,H);
+        recCtx.restore();
+      } else {
+        recCtx.drawImage(video,0,0,W,H);
+      }
+    }catch(e){}
+    // Draw pose overlay (skeleton + tracking dots from main canvas)
+    try{
+      if(canvas.width>0&&canvas.height>0)
+        recCtx.drawImage(canvas,0,0,W,H);
+    }catch(e){}
+    // Draw UI text overlay
+    _drawUIOverlay(W,H);
   }
   loop();
 }
 
-function _cleanupRec(){
-  isRecording=false;
-  if(_cropRaf){cancelAnimationFrame(_cropRaf);_cropRaf=null;}
-  if(_screenStream){_screenStream.getTracks().forEach(t=>t.stop());_screenStream=null;}
-  if(_screenVideo){
-    try{document.body.removeChild(_screenVideo);}catch(e){}
-    _screenVideo.srcObject=null;_screenVideo=null;
+function _drawUIOverlay(W,H){
+  const fs=Math.max(16,Math.round(H*0.032));
+  const pad=14;
+  recCtx.save();
+  recCtx.font=`700 ${fs}px 'Space Mono',monospace`;
+  recCtx.textBaseline='top';
+
+  // Top-left: exercise + avg RPE
+  const repCount=tracker.history.length;
+  const avgRpe=repCount?(tracker.history.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1):'—';
+  const ex=EX[curEx].label;
+  const l1=ex, l2=`Avg RPE: ${avgRpe}`;
+  const lw=Math.max(recCtx.measureText(l1).width,recCtx.measureText(l2).width)+20;
+  recCtx.fillStyle='rgba(0,0,0,0.6)';
+  _rrect(recCtx,pad,pad,lw,fs*2+20,6);
+  recCtx.fill();
+  recCtx.fillStyle='#e06c00'; recCtx.fillText(l1,pad+10,pad+6);
+  recCtx.fillStyle='#00e5c8'; recCtx.fillText(l2,pad+10,pad+10+fs);
+
+  // Top-right: rep N + RPE
+  if(liveRepNum>0&&liveRpe!==null){
+    const r1=`Rep ${liveRepNum}`;
+    const r2=`RPE ${liveRpe}`;
+    const rw=Math.max(recCtx.measureText(r1).width,recCtx.measureText(r2).width)+20;
+    const rx=W-pad-rw;
+    recCtx.fillStyle='rgba(0,0,0,0.6)';
+    _rrect(recCtx,rx,pad,rw,fs*2+20,6);
+    recCtx.fill();
+    recCtx.fillStyle='#f0f0f0'; recCtx.fillText(r1,rx+10,pad+6);
+    const rc=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=7?'#e06c00':'#00e5c8';
+    recCtx.fillStyle=rc; recCtx.fillText(r2,rx+10,pad+10+fs);
   }
+
+  recCtx.restore();
+}
+
+function _rrect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
 }
 
 function stopRec(){
   if(!isRecording||!mediaRecorder) return;
-  _cleanupRec();
+  isRecording=false;
+  if(_recRaf){cancelAnimationFrame(_recRaf);_recRaf=null;}
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
@@ -937,11 +938,9 @@ function stopRec(){
 function saveRec(){
   if(!chunks.length){showToast('No video data');return;}
   const mime=mediaRecorder?.mimeType||'video/webm';
-  const isMP4=mime.includes('mp4');
-  const ext=isMP4?'mp4':'webm';
   const blob=new Blob(chunks,{type:mime});
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
-  const name=`tatelift_${EX[curEx].label}_${ts}.${ext}`;
+  const name=`tatelift_${EX[curEx].label}_${ts}.mp4`;
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url; a.download=name;
@@ -949,7 +948,7 @@ function saveRec(){
   document.body.appendChild(a);
   requestAnimationFrame(()=>{
     a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
-    showToast(`✓ ${ext.toUpperCase()} 저장 시작`);
+    showToast('✓ 저장 시작');
     setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},30000);
   });
 }
@@ -991,12 +990,7 @@ btnStart.addEventListener('click',()=>{
     if(!camOn) return;
     resetUI();
     requestWakeLock();
-    if(autoRecord&&!isRecording){
-      // startRec must be called here — direct user gesture context
-      startRec().then(()=>startCountdown()).catch(()=>startCountdown());
-    } else {
-      startCountdown();
-    }
+    startCountdown();
   }
 });
 
