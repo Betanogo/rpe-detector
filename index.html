@@ -471,7 +471,13 @@ class RepTracker{
     let rawY=this._resolveY(primary, poseLm, handLms);
     if(rawY===null && colorBandPt) rawY=colorBandPt.y;
     else if(rawY!==null && colorBandPt) rawY=rawY*0.6+colorBandPt.y*0.4;
-    if(rawY===null) return null;
+
+    // If no valid point, hold last known Y (don't break FSM mid-rep)
+    if(rawY===null){
+      if(this._lastY===null) return null; // never had a valid reading
+      rawY=this._lastY; // reuse last known position
+    }
+    this._lastY=rawY;
 
     const y=this._emaPos.update(rawY);
 
@@ -509,9 +515,9 @@ class RepTracker{
 
   _resolvePoints(group, poseLm, handLms){
     if(group.source==='pose'){
-      if(!poseLm||poseLm.length<25) return [];
+      if(!poseLm||poseLm.length<17) return [];
+      // No visibility check — just filter out missing landmarks
       const coords=group.indices.map(i=>poseLm[i]).filter(Boolean);
-      if(coords.some(c=>(c.visibility??1)<0.15)) return []; // relaxed for shoulder/head
       return coords;
     } else {
       if(!handLms||!handLms.length) return [];
@@ -526,15 +532,17 @@ class RepTracker{
   resetSet(){
     this.repHistory=[];
     this._emaPos.reset();
+    this._lastY=null;
     this._reset();
   }
 
   _reset(){
     this._phase=Phase.WAITING;
     this._prevY=null;
+    this._lastY=null; // last valid Y from landmark
     this._buf=[];
-    this._localMax=null; // highest Y seen (= lowest physical position)
-    this._localMin=null; // lowest Y seen (= highest physical position)
+    this._localMax=null;
+    this._localMin=null;
     this._repStart=null;
     this._ascentStart=null;
     this._downCount=0;
