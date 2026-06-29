@@ -455,7 +455,7 @@ const Phase=Object.freeze({WAITING:'WAITING',DESCENDING:'DESCENDING',BOTTOM:'BOT
 class RepTracker{
   constructor(onRep){
     this.onRep=onRep; this.repHistory=[];
-    this._ema=new EMA(0.3); this._velEMA=new EMA(0.2);
+    this._ema=new EMA(0.25); this._velEMA=new EMA(0.15);
     this._reset();
   }
 
@@ -482,8 +482,8 @@ class RepTracker{
       vel=this._velEMA.update((smoothY-this._prev.y)/dt);
     }
 
-    const isDescending=vel>0.00012;
-    const isAscending=vel<-0.00012;
+    const isDescending=vel>0.00008;
+    const isAscending=vel<-0.00008;
 
     this._fsm({y:smoothY,vel,isDescending,isAscending,now});
     this._prev={y:smoothY,now};
@@ -534,6 +534,7 @@ class RepTracker{
   _reset(){
     this._phase=Phase.WAITING; this._prev=null;
     this._bottomY=null; this._ascentStart=null;
+    this._peakY=null;
     this._descentFrames=0; this._stillFrames=0;
   }
 
@@ -552,12 +553,33 @@ class RepTracker{
         if(isAscending){this._phase=Phase.ASCENDING;this._ascentStart=now;this._stillFrames=0;}
         break;
       case Phase.ASCENDING:{
-        const velAbs=Math.abs(vel);
-        if(velAbs<0.0004) this._stillFrames++; else this._stillFrames=0;
         const dur=(now-this._ascentStart)/1000;
-        if(this._stillFrames>=8||(isDescending&&dur>0.3)){
-          if(dur>=0.3&&dur<=12) this._completeRep(dur,now);
-          this._phase=Phase.WAITING; this._bottomY=null; this._stillFrames=0;
+
+        // Track peak position (highest point reached during ascent)
+        if(y < (this._peakY??y)) this._peakY=y;
+
+        // Count consecutive frames with near-zero velocity
+        const velAbs=Math.abs(vel);
+        if(velAbs<0.00025) this._stillFrames++;
+        else this._stillFrames=0;
+
+        // Rep complete when:
+        // (A) clearly descending again after meaningful ascent (next rep starting)
+        // (B) completely still for 1.5s (lockout at top)
+        const fps30equiv=45; // 1.5s × 30fps
+        const nextRepStarting = isDescending && dur>0.5 && velAbs>0.0003;
+        const lockedOut = this._stillFrames >= fps30equiv && dur>0.4;
+
+        if(nextRepStarting || lockedOut){
+          if(dur>=0.3 && dur<=15) this._completeRep(dur,now);
+          this._phase=Phase.WAITING;
+          this._bottomY=null; this._peakY=null; this._stillFrames=0;
+        }
+
+        // Safety: max 15s cap
+        if(dur>15){
+          this._phase=Phase.WAITING;
+          this._bottomY=null; this._peakY=null; this._stillFrames=0;
         }
         break;}
     }
@@ -582,7 +604,7 @@ let countingDown=false;
 let setHistory=[], setNumber=0;
 let autoRecord=true, useWakeLock=true, useAutoStop=true, autoStopSec=4, useColorBand=false;
 let wakeLockSentinel=null;
-let mediaRecorder=null, recordedChunks=[], isRecording=false, camOn=true;
+let mediaRecorder=null, recordedChunks=[], isRecording=false, camOn=true, _recStreamRef=null;
 let liveRpe=null, liveRepNum=0;
 
 // Auto-stop state
@@ -987,12 +1009,25 @@ function getRecMime(){
   return '';
 }
 
-function startRecording(){
+async function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
 
-  // Use the original stream directly — wrapping in new MediaStream() causes flicker
-  const recStream=stream;
+  // Open a separate camera stream for recording to avoid preview buffer conflicts
+  let recStream=stream; // fallback
+  try{
+    const constraints={
+      video:{facingMode, width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30}},
+      audio:false
+    };
+    recStream=await navigator.mediaDevices.getUserMedia(constraints);
+    // Store so we can stop it after recording
+    _recStreamRef=recStream;
+  }catch(e){
+    // Fallback to preview stream
+    recStream=stream;
+    _recStreamRef=null;
+  }
 
   const mime=getRecMime();
   let mr;
@@ -1030,9 +1065,18 @@ function stopRecording(){
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
-      setTimeout(()=>{ try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){} }, 500);
+      setTimeout(()=>{
+        try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){}
+        // Stop dedicated rec stream after saving
+        setTimeout(()=>{
+          if(_recStreamRef){ _recStreamRef.getTracks().forEach(t=>t.stop()); _recStreamRef=null; }
+        },1000);
+      }, 500);
     }
-  }catch(e){ try{ mediaRecorder.stop(); }catch(e2){} }
+  }catch(e){
+    try{ mediaRecorder.stop(); }catch(e2){}
+    if(_recStreamRef){ _recStreamRef.getTracks().forEach(t=>t.stop()); _recStreamRef=null; }
+  }
 }
 
 function saveRecording(){
