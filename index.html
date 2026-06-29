@@ -991,10 +991,8 @@ function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
 
-  // Always use raw video track — captureStream() is unreliable on Android
-  const vt=stream.getVideoTracks()[0];
-  if(!vt||vt.readyState==='ended'){ showToast('카메라 트랙 없음'); return; }
-  const recStream=new MediaStream([vt]);
+  // Use the original stream directly — wrapping in new MediaStream() causes flicker
+  const recStream=stream;
 
   const mime=getRecMime();
   let mr;
@@ -1008,7 +1006,7 @@ function startRecording(){
   mr.ondataavailable=e=>{ if(e.data&&e.data.size>0) recordedChunks.push(e.data); };
   mr.onstop=saveRecording;
   mr.onerror=e=>{ showToast('Rec: '+(e.error?.message||'error')); isRecording=false; setRecUI(false); };
-  mr.start(1000);
+  mr.start(250); // smaller chunks = smoother playback
   mediaRecorder=mr;
   isRecording=true;
   setRecUI(true);
