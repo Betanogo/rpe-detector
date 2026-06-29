@@ -63,7 +63,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
 #phase-badge.ascending{color:var(--teal);border-color:var(--teal);}
 
 /* ── TRACK CHIPS (multiple) ── */
-#track-chips{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:5px;pointer-events:none;}
+#track-chips{position:absolute;bottom:68px;right:12px;display:flex;flex-direction:column;align-items:flex-end;gap:5px;pointer-events:none;}
 .track-chip{background:rgba(13,13,13,0.75);border:1px solid var(--border);border-radius:6px;padding:4px 8px;backdrop-filter:blur(6px);}
 .track-chip .tv{font-family:var(--fm);font-size:11px;font-weight:700;color:var(--teal);}
 .track-chip .tl{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:1px;}
@@ -80,7 +80,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
 #countdown-label{font-size:14px;color:var(--text2);margin-top:8px;letter-spacing:.1em;}
 
 /* ── CAM CONTROLS (bottom-left) ── */
-#cam-controls{position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:flex-start;gap:10px;padding:0 14px;pointer-events:none;z-index:3;}
+#cam-controls{position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:flex-start;gap:10px;padding:0 14px;pointer-events:none;z-index:3;transition:opacity .2s;}
 #cam-controls button{pointer-events:all;}
 .cam-fab{width:44px;height:44px;border-radius:50%;background:rgba(13,13,13,0.75);border:2px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);transition:all .2s;}
 .cam-fab:hover{border-color:var(--acc);color:var(--acc);}
@@ -199,6 +199,14 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
       <span style="font-size:12px;color:var(--text3);">정지 판정 시간</span>
       <input type="number" class="num-input" id="autostop-sec" value="4" min="2" max="30"/>
       <span style="font-size:12px;color:var(--text3);">초</span>
+    </div>
+
+    <div class="setting-row" style="border:none;margin-top:8px;">
+      <div><div class="setting-label">Color Band Tracking</div><div class="setting-desc">빨간 밴드/플레이트 색상 보조 트래킹</div></div>
+      <label class="toggle"><input type="checkbox" id="tog-color"/><span class="toggle-slider"></span></label>
+    </div>
+    <div id="color-band-desc" style="padding:0 0 14px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);line-height:1.6;">
+      ON 시 빨간 물체(밴드·플레이트)의 중심점을 추가로 감지해 primary 트래킹 포인트를 보완합니다.
     </div>
 
     <div style="margin-top:auto;padding-top:24px;">
@@ -453,12 +461,18 @@ class RepTracker{
 
   // poseLm: pose landmarks array | null
   // handLms: array of hand landmark arrays (each hand) | []
-  update(poseLm, handLms, exKey, now=performance.now()){
+  update(poseLm, handLms, exKey, now=performance.now(), colorBandPt=null){
     const cfg=EX_CONFIG[exKey]; if(!cfg) return null;
     const primary=cfg.trackGroups[0];
 
     // Resolve primary tracking point Y
-    const primaryY=this._resolveY(primary, poseLm, handLms);
+    // If color band detected, blend it into primary Y (weighted avg)
+    let primaryY=this._resolveY(primary, poseLm, handLms);
+    if(primaryY===null && colorBandPt!==null){
+      primaryY=colorBandPt.y; // use band only if pose fails
+    } else if(primaryY!==null && colorBandPt!==null){
+      primaryY=(primaryY*0.6 + colorBandPt.y*0.4); // blend 60/40
+    }
     if(primaryY===null) return null;
 
     const smoothY=this._ema.update(primaryY);
@@ -566,7 +580,7 @@ let currentExercise='SQ';
 let weightKg=null, weightUnit='kg';
 let countingDown=false;
 let setHistory=[], setNumber=0;
-let autoRecord=true, useWakeLock=true, useAutoStop=true, autoStopSec=4;
+let autoRecord=true, useWakeLock=true, useAutoStop=true, autoStopSec=4, useColorBand=false;
 let wakeLockSentinel=null;
 let mediaRecorder=null, recordedChunks=[], isRecording=false, camOn=true;
 let liveRpe=null, liveRepNum=0;
@@ -676,6 +690,47 @@ function updateTrackChips(){
   });
 }
 
+// ── Color band detection ─────────────────────────────────
+// Detects red objects (wrist band or red plates) in the camera frame
+// Returns normalized {x, y} centroid or null
+function detectRedBand(videoEl, W, H){
+  // Sample from a small offscreen canvas for perf
+  const SCALE=0.15; // sample at 15% res
+  const sw=Math.round(W*SCALE), sh=Math.round(H*SCALE);
+  if(sw<4||sh<4) return null;
+  const offCtx=_bandCanvas.getContext('2d',{willReadFrequently:true});
+  _bandCanvas.width=sw; _bandCanvas.height=sh;
+  try{ offCtx.drawImage(videoEl,0,0,sw,sh); }catch(e){ return null; }
+  let data;
+  try{ data=offCtx.getImageData(0,0,sw,sh).data; }catch(e){ return null; }
+
+  let sumX=0,sumY=0,count=0;
+  for(let y=0;y<sh;y++){
+    for(let x=0;x<sw;x++){
+      const i=(y*sw+x)*4;
+      const r=data[i],g=data[i+1],b=data[i+2];
+      // Red: high R, low G, low B
+      // Also convert to HSV-like check
+      const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+      if(max===0) continue;
+      const s=d/max; // saturation
+      // Hue approximation for red (0-15 or 165-180 degrees)
+      let h=0;
+      if(d>0){
+        if(max===r) h=((g-b)/d+6)%6;
+        else if(max===g) h=(b-r)/d+2;
+        else h=(r-g)/d+4;
+        h*=60;
+      }
+      const isRed=(h<20||h>340)&&s>0.45&&max>80;
+      if(isRed){ sumX+=x; sumY+=y; count++; }
+    }
+  }
+  if(count<6) return null; // too few pixels
+  return {x:(sumX/count)/sw, y:(sumY/count)/sh};
+}
+const _bandCanvas=document.createElement('canvas');
+
 // ── Detection loop ────────────────────────────────────────
 function detectLoop(){
   if(!tracking){rafId=null;return;}
@@ -715,7 +770,23 @@ function detectLoop(){
     });
   }
 
-  const live=tracker.update(poseLm, handLms, currentExercise, now);
+  // Color band: detect red centroid and inject as extra hand point
+  let colorBandPt=null;
+  if(useColorBand){
+    colorBandPt=detectRedBand(video, W, H);
+    if(colorBandPt){
+      // Draw band marker on overlay
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(colorBandPt.x*W, colorBandPt.y*H, 14, 0, Math.PI*2);
+      ctx.strokeStyle='#ff4444'; ctx.lineWidth=3;
+      ctx.fillStyle='rgba(255,50,50,0.25)';
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  const live=tracker.update(poseLm, handLms, currentExercise, now, colorBandPt);
 
   if(live){
     renderOverlay(live, W, H);
@@ -738,7 +809,6 @@ function detectLoop(){
     updateAutoStopRing(0);
   }
 
-  if(isRecording) drawRecordingOverlay(W,H);
 }
 
 // ── Auto-stop ring ────────────────────────────────────────
@@ -789,30 +859,6 @@ function renderOverlay(live, W, H){
   ctx.restore();
 
   updatePhaseUI(live.phase);
-}
-
-// ── Recording overlay ─────────────────────────────────────
-function drawRecordingOverlay(W,H){
-  const repCount=tracker.repHistory.length;
-  const avgRpe=repCount?(tracker.repHistory.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1):'—';
-  ctx.save();
-  ctx.font=`bold 16px 'Space Mono',monospace`;
-  ctx.fillStyle='rgba(0,0,0,0.6)';
-  ctx.fillRect(8,8,150,50);
-  ctx.fillStyle='#e06c00';
-  ctx.fillText(`Reps: ${repCount}`,14,28);
-  ctx.fillStyle='#00e5c8';
-  ctx.fillText(`Avg RPE: ${avgRpe}`,14,48);
-  if(liveRpe!==null){
-    const rpeColor=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
-    const label=`Rep ${liveRepNum}  RPE ${liveRpe}`;
-    const tw=ctx.measureText(label).width;
-    ctx.fillStyle='rgba(0,0,0,0.6)';
-    ctx.fillRect(W-tw-22,8,tw+14,32);
-    ctx.fillStyle=rpeColor;
-    ctx.fillText(label,W-tw-15,28);
-  }
-  ctx.restore();
 }
 
 function roundRect(ctx,x,y,w,h,r){
@@ -920,28 +966,41 @@ function handleStopSet(auto=false){
   releaseWakeLock();
 }
 
-// ── Recording ─────────────────────────────────────────────
-function getBtnRecord(){ return document.getElementById('btn-record'); }
+// ── Recording (canvas composite) ────────────────────────────
+// Strategy: draw video frame + UI overlays onto recCanvas each RAF,
+// then captureStream() from that canvas.
+// Key fix: draw one frame BEFORE calling captureStream() so the
+// track is never empty.
 
-function setRecordingUI(on){
-  const btn=getBtnRecord(); if(!btn) return;
-  if(on){btn.textContent='⏹';btn.classList.add('recording');}
-  else{btn.textContent='⏺';btn.classList.remove('recording');}
-}
+const camControls = document.getElementById('cam-controls');
 
 function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
 
-  const videoTrack=stream.getVideoTracks()[0];
-  if(!videoTrack||videoTrack.readyState==='ended'){
-    showToast('카메라 트랙 없음'); return;
+  // Size recCanvas to match video
+  const W=video.videoWidth||640;
+  const H=video.videoHeight||480;
+  recCanvas.width=W; recCanvas.height=H;
+
+  // Draw one frame first so captureStream gets a live track
+  drawCompositeFrame(W, H);
+
+  let recStream;
+  try{
+    recStream=recCanvas.captureStream(30);
+  }catch(e){
+    // Fallback: raw camera track
+    recStream=new MediaStream([stream.getVideoTracks()[0]]);
   }
 
-  // Use only the video track in a fresh MediaStream
-  const recStream=new MediaStream([videoTrack]);
+  // Validate track
+  const tracks=recStream.getVideoTracks();
+  if(!tracks.length||tracks[0].readyState==='ended'){
+    recStream=new MediaStream([stream.getVideoTracks()[0]]);
+  }
 
-  // Find supported mimeType
+  // Find best mimeType
   const mimes=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4',''];
   let chosenMime='';
   for(const m of mimes){
@@ -960,33 +1019,125 @@ function startRecording(){
     if(e.data&&e.data.size>0) recordedChunks.push(e.data);
   };
   mediaRecorder.onstop=saveRecording;
-  mediaRecorder.onerror=e=>{ showToast('Rec err: '+(e.error?.message||e.type)); isRecording=false; setRecordingUI(false); };
-
-  // timeslice=1000: fire ondataavailable every 1s
-  mediaRecorder.start(1000);
+  mediaRecorder.onerror=e=>showToast('Rec err: '+(e.error?.message||e.type));
+  mediaRecorder.start(500);
   isRecording=true;
-  setRecordingUI(true);
+
+  // Hide cam controls during recording
+  if(camControls) camControls.style.opacity='0';
+  camControls.style.pointerEvents='none';
+
+  startCompositeLoop();
   showToast('REC ●');
 }
 
 let compositeRafId=null;
-function startCompositeLoop(){} // noop — using raw stream
+
+function drawCompositeFrame(W, H){
+  recCtx.clearRect(0,0,W,H);
+  // Draw video (mirror if front cam)
+  try{
+    if(facingMode==='user'){
+      recCtx.save();
+      recCtx.scale(-1,1);
+      recCtx.drawImage(video,-W,0,W,H);
+      recCtx.restore();
+    } else {
+      recCtx.drawImage(video,0,0,W,H);
+    }
+  }catch(e){}
+
+  // Draw pose overlay canvas (skeleton + tracking dots + velocity bar)
+  try{
+    if(canvas.width>0&&canvas.height>0){
+      recCtx.drawImage(canvas,0,0,W,H);
+    }
+  }catch(e){}
+
+  // Draw RPE info text overlays
+  drawVideoOverlayText(W, H);
+}
+
+function startCompositeLoop(){
+  if(compositeRafId) cancelAnimationFrame(compositeRafId);
+  const W=recCanvas.width, H=recCanvas.height;
+  function loop(){
+    if(!isRecording){compositeRafId=null;return;}
+    compositeRafId=requestAnimationFrame(loop);
+    drawCompositeFrame(W, H);
+  }
+  loop();
+}
+
+function drawVideoOverlayText(W, H){
+  const repCount=tracker.repHistory.length;
+  const avgRpe=repCount?(tracker.repHistory.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1):'—';
+  const ex=EX_CONFIG[currentExercise].label;
+
+  recCtx.save();
+  recCtx.font=`bold ${Math.round(H*0.032)}px 'Space Mono',monospace`;
+  const fh=Math.round(H*0.032);
+  const pad=Math.round(W*0.018);
+  const boxPad=8;
+
+  // ── Left top: exercise name + avg RPE ──
+  const leftLines=[ex, `Avg RPE: ${avgRpe}`];
+  const leftW=Math.max(...leftLines.map(l=>recCtx.measureText(l).width));
+  recCtx.fillStyle='rgba(0,0,0,0.55)';
+  recCtx.beginPath();
+  roundRectPath(recCtx, pad, pad, leftW+boxPad*2, fh*2+boxPad*2+6, 6);
+  recCtx.fill();
+  recCtx.fillStyle='#e06c00';
+  recCtx.fillText(ex, pad+boxPad, pad+boxPad+fh*0.85);
+  recCtx.fillStyle='#00e5c8';
+  recCtx.fillText(`Avg RPE: ${avgRpe}`, pad+boxPad, pad+boxPad+fh*2);
+
+  // ── Right top: rep count + current rep RPE ──
+  const repLine=`Rep ${repCount}`;
+  const rpeLine=liveRpe!==null?`RPE ${liveRpe}`:'RPE —';
+  const rightW=Math.max(recCtx.measureText(repLine).width, recCtx.measureText(rpeLine).width);
+  const rx=W-pad-rightW-boxPad*2;
+  recCtx.fillStyle='rgba(0,0,0,0.55)';
+  recCtx.beginPath();
+  roundRectPath(recCtx, rx, pad, rightW+boxPad*2, fh*2+boxPad*2+6, 6);
+  recCtx.fill();
+  recCtx.fillStyle='#f0f0f0';
+  recCtx.fillText(repLine, rx+boxPad, pad+boxPad+fh*0.85);
+  const rpeColor=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
+  recCtx.fillStyle=liveRpe!==null?rpeColor:'#505050';
+  recCtx.fillText(rpeLine, rx+boxPad, pad+boxPad+fh*2);
+
+  recCtx.restore();
+}
+
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}
 
 function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
   isRecording=false;
-  setRecordingUI(false);
-  const state=mediaRecorder.state;
-  if(state==='recording'||state==='paused'){
-    try{ mediaRecorder.requestData(); }catch(e){}
-    setTimeout(()=>{
-      try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){}
-    },400);
+  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
+  // Show cam controls again
+  if(camControls){camControls.style.opacity='1';camControls.style.pointerEvents='';}
+  try{
+    if(mediaRecorder.state==='recording'){
+      mediaRecorder.requestData();
+      setTimeout(()=>{
+        try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}
+      },400);
+    }
+  }catch(e){
+    try{mediaRecorder.stop();}catch(e2){}
   }
 }
 
 function saveRecording(){
-  if(recordedChunks.length===0){ showToast('No video data recorded'); return; }
+  if(recordedChunks.length===0){showToast('No video data recorded');return;}
   const mime=mediaRecorder?.mimeType||recordedChunks[0]?.type||'video/webm';
   const blob=new Blob(recordedChunks,{type:mime});
   const ext=mime.includes('mp4')?'mp4':'webm';
@@ -994,14 +1145,13 @@ function saveRecording(){
   const filename=`tatelift_${EX_CONFIG[currentExercise].label}_${ts}.${ext}`;
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
 
-  // Web Share API — best on mobile
   if(navigator.canShare){
     try{
       const file=new File([blob],filename,{type:mime});
       if(navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:'TATELIFT'})
           .then(()=>showToast('✓ 저장 완료'))
-          .catch(e=>{ if(e.name!=='AbortError') directDownload(blob,filename,isIOS); });
+          .catch(e=>{if(e.name!=='AbortError')directDownload(blob,filename,isIOS);});
         return;
       }
     }catch(e){}
@@ -1024,7 +1174,7 @@ function directDownload(blob,filename,isIOS){
   requestAnimationFrame(()=>{
     a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
     showToast('✓ 다운로드 시작');
-    setTimeout(()=>{ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },20000);
+    setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},20000);
   });
 }
 
