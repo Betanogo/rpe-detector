@@ -18,7 +18,7 @@
   --sb:env(safe-area-inset-bottom,0px);
 }
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--fb);overflow:hidden;-webkit-font-smoothing:antialiased;}
-#app{display:grid;grid-template-rows:auto 1fr auto;height:100dvh;max-width:480px;margin:0 auto;}
+#app{display:grid;grid-template-rows:auto 1fr auto;height:100dvh;max-width:480px;margin:0 auto;overflow:hidden;}
 
 /* ── TOP BAR ── */
 #topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg);}
@@ -87,37 +87,37 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 #btn-cam-off.off{background:var(--s3);border-color:var(--text3);color:var(--text3);}
 
 /* ── PANEL ── */
-#panel{background:var(--s1);border-top:1px solid var(--border);padding:10px 14px calc(10px + var(--sb));display:flex;flex-direction:column;gap:8px;}
+#panel{background:var(--s1);border-top:1px solid var(--border);padding:clamp(6px,1.5vh,10px) 14px calc(clamp(6px,1.5vh,10px) + var(--sb));display:flex;flex-direction:column;gap:clamp(4px,1vh,7px);overflow:hidden;}
 
 /* weight + start */
 #weight-start-row{display:flex;gap:8px;align-items:center;}
-#weight-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fm);font-size:15px;font-weight:600;padding:8px 10px;outline:none;transition:border-color .2s;min-width:0;}
+#weight-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fm);font-size:14px;font-weight:600;padding:7px 10px;outline:none;transition:border-color .2s;min-width:0;}
 #weight-in:focus{border-color:var(--acc);}
 #weight-in::placeholder{color:var(--text3);}
 .unit-seg{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
-.unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:8px 12px;cursor:pointer;transition:background .15s,color .15s;}
+.unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:7px 11px;cursor:pointer;transition:background .15s,color .15s;}
 .unit-seg-btn.active{background:var(--acc);color:#000;font-weight:700;}
-#btn-start{background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--fm);font-size:14px;font-weight:700;padding:10px 16px;cursor:pointer;white-space:nowrap;transition:opacity .15s,transform .1s;}
+#btn-start{background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--fm);font-size:14px;font-weight:700;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:opacity .15s,transform .1s;}
 #btn-start:active{transform:scale(.97);opacity:.85;}
 #btn-start.stopping{background:var(--danger);}
 
 /* rpe + reset */
 #rpe-reset-row{display:flex;gap:8px;align-items:center;}
-#rpe-mini{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;min-width:0;}
+#rpe-mini{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;min-width:0;}
 #rpe-mini-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
 #rpe-label{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);}
 #rpe-right{display:flex;align-items:baseline;gap:6px;}
 #rpe-desc{font-size:10px;color:var(--text3);}
-#rpe-val{font-family:var(--fm);font-weight:700;font-size:18px;color:var(--acc);}
+#rpe-val{font-family:var(--fm);font-weight:700;font-size:16px;color:var(--acc);}
 #rpe-track{height:5px;background:var(--s3);border-radius:2px;overflow:hidden;}
 #rpe-fill{height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .6s cubic-bezier(0.16,1,0.3,1),background .4s;}
-#btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:10px 14px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s;}
+#btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:8px 12px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s;}
 #btn-reset:hover{color:var(--danger);border-color:var(--danger);}
 
 /* metrics */
 #metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;}
-.metric{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 6px 6px;text-align:center;}
-.metric-val{font-family:var(--fm);font-weight:700;font-size:20px;line-height:1;color:var(--text);}
+.metric{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:clamp(4px,1vh,8px) 4px clamp(3px,.8vh,6px);text-align:center;}
+.metric-val{font-family:var(--fm);font-weight:700;font-size:clamp(14px,3.5vw,20px);line-height:1;color:var(--text);}
 .metric-val.acc{color:var(--acc);}
 .metric-val.teal{color:var(--teal);}
 .metric-val.danger{color:var(--danger);}
@@ -126,7 +126,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 /* tabs */
 .tab-wrap{position:relative;}
 #tabs{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
-.tab-btn{flex:1;background:var(--s2);color:var(--text3);border:none;font-family:var(--fb);font-size:11px;font-weight:500;padding:7px;cursor:pointer;transition:background .15s,color .15s;}
+.tab-btn{flex:1;background:var(--s2);color:var(--text3);border:none;font-family:var(--fb);font-size:11px;font-weight:500;padding:6px;cursor:pointer;transition:background .15s,color .15s;}
 .tab-btn.active{color:var(--acc);border-bottom:2px solid var(--acc);}
 #tab-current,#tab-sets{display:none;}
 #tab-current.visible,#tab-sets.visible{display:block;}
@@ -134,7 +134,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 #btn-expand:hover{color:var(--acc);}
 
 /* rep table */
-#history-wrap{max-height:90px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;scrollbar-width:thin;}
+#history-wrap{max-height:clamp(56px,9vh,90px);overflow-y:auto;border:1px solid var(--border);border-radius:6px;scrollbar-width:thin;}
 #rep-table{width:100%;border-collapse:collapse;font-family:var(--fm);font-size:11px;}
 #rep-table thead th{position:sticky;top:0;background:var(--s2);color:var(--text3);font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-family:var(--fb);font-weight:600;padding:5px 7px;text-align:right;border-bottom:1px solid var(--border);}
 #rep-table thead th:first-child{text-align:left;}
@@ -874,18 +874,23 @@ function startCountdown(){
 }
 
 // ── Torch flash ─────────────────────────────────────────────
-async function flashTorch(times=3,onMs=200,offMs=150){
-  const track=stream?.getVideoTracks?.()?.[0];
-  if(!track) return;
-  const caps=track.getCapabilities?.()??{};
-  if(!caps.torch) return;
+// ── Auto-stop alert: vibration + beep ───────────────────────
+function alertAutoStop(){
+  // Vibration: 3 pulses (Android only, iOS silently ignores)
+  if(navigator.vibrate) navigator.vibrate([300,120,300,120,300]);
+  // Beep x3 via Web Audio (iOS + Android)
   try{
-    for(let i=0;i<times;i++){
-      await track.applyConstraints({advanced:[{torch:true}]});
-      await new Promise(r=>setTimeout(r,onMs));
-      await track.applyConstraints({advanced:[{torch:false}]});
-      if(i<times-1) await new Promise(r=>setTimeout(r,offMs));
-    }
+    const ac=new (window.AudioContext||window.webkitAudioContext)();
+    [0, 0.55, 1.1].forEach(offset=>{
+      const osc=ac.createOscillator();
+      const gain=ac.createGain();
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.type='sine'; osc.frequency.value=880;
+      gain.gain.setValueAtTime(0.6, ac.currentTime+offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+offset+0.3);
+      osc.start(ac.currentTime+offset);
+      osc.stop(ac.currentTime+offset+0.32);
+    });
   }catch(e){}
 }
 
@@ -897,7 +902,7 @@ function handleStopSet(auto=false){
   updatePhaseUI('WAITING');
   updateAutoStopRing(0);
   if(autoRecord&&isRecording) stopRecording();
-  if(auto) flashTorch(3,200,150);
+  if(auto) alertAutoStop();
   if(tracker.repHistory.length>0){
     setNumber++;
     const history=tracker.repHistory;
