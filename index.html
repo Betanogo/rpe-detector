@@ -418,19 +418,19 @@ const EX_CONFIG = {
 
 // ── RPE table: concentric duration → RPE ─────────────────
 const RPE_TIME_TABLE = [
-  {dur:0.60, rpe:4.0, label:'Warm-up'},
-  {dur:0.80, rpe:4.5, label:'Very Light'},
-  {dur:1.00, rpe:5.0, label:'Light'},
-  {dur:1.30, rpe:5.5, label:'Light-Moderate'},
-  {dur:1.70, rpe:6.0, label:'Moderate'},
-  {dur:2.10, rpe:6.5, label:'Moderate+'},
-  {dur:2.60, rpe:7.0, label:'Somewhat Hard'},
-  {dur:3.10, rpe:7.5, label:'Hard'},
-  {dur:3.80, rpe:8.0, label:'Very Hard'},
-  {dur:4.60, rpe:8.5, label:'Very Hard+'},
-  {dur:5.80, rpe:9.0, label:'Near Max'},
-  {dur:7.50, rpe:9.5, label:'Almost Max'},
-  {dur:10.0, rpe:10,  label:'Max / Fail'},
+  {dur:0.50, rpe:4.0, label:'Warm-up'},
+  {dur:0.65, rpe:4.5, label:'Very Light'},
+  {dur:0.80, rpe:5.0, label:'Light'},
+  {dur:1.00, rpe:5.5, label:'Light-Moderate'},
+  {dur:1.25, rpe:6.0, label:'Moderate'},
+  {dur:1.55, rpe:6.5, label:'Moderate+'},
+  {dur:1.90, rpe:7.0, label:'Somewhat Hard'},
+  {dur:2.35, rpe:7.5, label:'Hard'},
+  {dur:2.90, rpe:8.0, label:'Very Hard'},
+  {dur:3.60, rpe:8.5, label:'Very Hard+'},
+  {dur:4.50, rpe:9.0, label:'Near Max'},
+  {dur:6.00, rpe:9.5, label:'Almost Max'},
+  {dur:8.00, rpe:10,  label:'Max / Fail'},
 ];
 
 function lookupRPE(dur){
@@ -1351,8 +1351,20 @@ function setStatus(msg){loadStatus.textContent=msg;}
 window.addEventListener('resize',resizeCanvas);
 
 // ── Boot ──────────────────────────────────────────────────
+// Expose for console debugging
+window._tatelift={
+  get ffmpegReady(){ return _ffmpegReady; },
+  get ffmpeg(){ return _ffmpeg; },
+  loadFFmpeg,
+};
+
 initMP();
 requestWakeLock();
+// Start loading FFmpeg immediately on page load (background)
+loadFFmpeg().then(ok=>{
+  if(ok) console.log('[TATELIFT] FFmpeg ready');
+  else console.warn('[TATELIFT] FFmpeg load failed');
+});
 </script>
 </body>
 </html>
