@@ -966,192 +966,95 @@ function handleStopSet(auto=false){
   releaseWakeLock();
 }
 
-// ── Recording (canvas composite) ────────────────────────────
-// Strategy: draw video frame + UI overlays onto recCanvas each RAF,
-// then captureStream() from that canvas.
-// Key fix: draw one frame BEFORE calling captureStream() so the
-// track is never empty.
+// ── Recording ────────────────────────────────────────────────
+// Use raw camera stream — most reliable across all Android/iOS browsers.
+// Canvas captureStream() is broken on many Android Chrome versions.
 
 const camControls = document.getElementById('cam-controls');
+
+// mp4 preferred, webm fallback
+function getRecMime(){
+  const order=[
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  for(const m of order){
+    try{ if(MediaRecorder.isTypeSupported(m)) return m; }catch(e){}
+  }
+  return '';
+}
 
 function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
 
-  // Size recCanvas to match video
-  const W=video.videoWidth||640;
-  const H=video.videoHeight||480;
-  recCanvas.width=W; recCanvas.height=H;
+  // Always use raw video track — captureStream() is unreliable on Android
+  const vt=stream.getVideoTracks()[0];
+  if(!vt||vt.readyState==='ended'){ showToast('카메라 트랙 없음'); return; }
+  const recStream=new MediaStream([vt]);
 
-  // Draw one frame first so captureStream gets a live track
-  drawCompositeFrame(W, H);
-
-  let recStream;
+  const mime=getRecMime();
+  let mr;
   try{
-    recStream=recCanvas.captureStream(30);
+    mr=new MediaRecorder(recStream, mime?{mimeType:mime}:{});
   }catch(e){
-    // Fallback: raw camera track
-    recStream=new MediaStream([stream.getVideoTracks()[0]]);
+    try{ mr=new MediaRecorder(recStream); }
+    catch(e2){ showToast('녹화 미지원'); return; }
   }
 
-  // Validate track
-  const tracks=recStream.getVideoTracks();
-  if(!tracks.length||tracks[0].readyState==='ended'){
-    recStream=new MediaStream([stream.getVideoTracks()[0]]);
-  }
-
-  // Find best mimeType
-  const mimes=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4',''];
-  let chosenMime='';
-  for(const m of mimes){
-    try{ if(!m||MediaRecorder.isTypeSupported(m)){chosenMime=m;break;} }catch(e){}
-  }
-
-  try{
-    const opts=chosenMime?{mimeType:chosenMime}:{};
-    mediaRecorder=new MediaRecorder(recStream,opts);
-  }catch(e){
-    try{ mediaRecorder=new MediaRecorder(recStream); }
-    catch(e2){ showToast('녹화 미지원: '+e2.message); return; }
-  }
-
-  mediaRecorder.ondataavailable=e=>{
-    if(e.data&&e.data.size>0) recordedChunks.push(e.data);
-  };
-  mediaRecorder.onstop=saveRecording;
-  mediaRecorder.onerror=e=>showToast('Rec err: '+(e.error?.message||e.type));
-  mediaRecorder.start(500);
+  mr.ondataavailable=e=>{ if(e.data&&e.data.size>0) recordedChunks.push(e.data); };
+  mr.onstop=saveRecording;
+  mr.onerror=e=>{ showToast('Rec: '+(e.error?.message||'error')); isRecording=false; setRecUI(false); };
+  mr.start(1000);
+  mediaRecorder=mr;
   isRecording=true;
-
-  // Hide cam controls during recording
-  if(camControls) camControls.style.opacity='0';
-  camControls.style.pointerEvents='none';
-
-  startCompositeLoop();
+  setRecUI(true);
   showToast('REC ●');
 }
 
 let compositeRafId=null;
+function startCompositeLoop(){} // noop
+function drawCompositeFrame(){} // noop
+function drawVideoOverlayText(){} // noop
 
-function drawCompositeFrame(W, H){
-  recCtx.clearRect(0,0,W,H);
-  // Draw video (mirror if front cam)
-  try{
-    if(facingMode==='user'){
-      recCtx.save();
-      recCtx.scale(-1,1);
-      recCtx.drawImage(video,-W,0,W,H);
-      recCtx.restore();
-    } else {
-      recCtx.drawImage(video,0,0,W,H);
-    }
-  }catch(e){}
-
-  // Draw pose overlay canvas (skeleton + tracking dots + velocity bar)
-  try{
-    if(canvas.width>0&&canvas.height>0){
-      recCtx.drawImage(canvas,0,0,W,H);
-    }
-  }catch(e){}
-
-  // Draw RPE info text overlays
-  drawVideoOverlayText(W, H);
-}
-
-function startCompositeLoop(){
-  if(compositeRafId) cancelAnimationFrame(compositeRafId);
-  const W=recCanvas.width, H=recCanvas.height;
-  function loop(){
-    if(!isRecording){compositeRafId=null;return;}
-    compositeRafId=requestAnimationFrame(loop);
-    drawCompositeFrame(W, H);
-  }
-  loop();
-}
-
-function drawVideoOverlayText(W, H){
-  const repCount=tracker.repHistory.length;
-  const avgRpe=repCount?(tracker.repHistory.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1):'—';
-  const ex=EX_CONFIG[currentExercise].label;
-
-  recCtx.save();
-  recCtx.font=`bold ${Math.round(H*0.032)}px 'Space Mono',monospace`;
-  const fh=Math.round(H*0.032);
-  const pad=Math.round(W*0.018);
-  const boxPad=8;
-
-  // ── Left top: exercise name + avg RPE ──
-  const leftLines=[ex, `Avg RPE: ${avgRpe}`];
-  const leftW=Math.max(...leftLines.map(l=>recCtx.measureText(l).width));
-  recCtx.fillStyle='rgba(0,0,0,0.55)';
-  recCtx.beginPath();
-  roundRectPath(recCtx, pad, pad, leftW+boxPad*2, fh*2+boxPad*2+6, 6);
-  recCtx.fill();
-  recCtx.fillStyle='#e06c00';
-  recCtx.fillText(ex, pad+boxPad, pad+boxPad+fh*0.85);
-  recCtx.fillStyle='#00e5c8';
-  recCtx.fillText(`Avg RPE: ${avgRpe}`, pad+boxPad, pad+boxPad+fh*2);
-
-  // ── Right top: rep count + current rep RPE ──
-  const repLine=`Rep ${repCount}`;
-  const rpeLine=liveRpe!==null?`RPE ${liveRpe}`:'RPE —';
-  const rightW=Math.max(recCtx.measureText(repLine).width, recCtx.measureText(rpeLine).width);
-  const rx=W-pad-rightW-boxPad*2;
-  recCtx.fillStyle='rgba(0,0,0,0.55)';
-  recCtx.beginPath();
-  roundRectPath(recCtx, rx, pad, rightW+boxPad*2, fh*2+boxPad*2+6, 6);
-  recCtx.fill();
-  recCtx.fillStyle='#f0f0f0';
-  recCtx.fillText(repLine, rx+boxPad, pad+boxPad+fh*0.85);
-  const rpeColor=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
-  recCtx.fillStyle=liveRpe!==null?rpeColor:'#505050';
-  recCtx.fillText(rpeLine, rx+boxPad, pad+boxPad+fh*2);
-
-  recCtx.restore();
-}
-
-function roundRectPath(ctx,x,y,w,h,r){
-  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
-  ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);
-  ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);
-  ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);
-  ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+function setRecUI(on){
+  if(camControls) camControls.style.opacity=on?'0':'1';
 }
 
 function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
   isRecording=false;
-  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
-  // Show cam controls again
-  if(camControls){camControls.style.opacity='1';camControls.style.pointerEvents='';}
+  setRecUI(false);
+  if(compositeRafId){ cancelAnimationFrame(compositeRafId); compositeRafId=null; }
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
-      setTimeout(()=>{
-        try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}
-      },400);
+      setTimeout(()=>{ try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){} }, 500);
     }
-  }catch(e){
-    try{mediaRecorder.stop();}catch(e2){}
-  }
+  }catch(e){ try{ mediaRecorder.stop(); }catch(e2){} }
 }
 
 function saveRecording(){
-  if(recordedChunks.length===0){showToast('No video data recorded');return;}
-  const mime=mediaRecorder?.mimeType||recordedChunks[0]?.type||'video/webm';
-  const blob=new Blob(recordedChunks,{type:mime});
+  if(!recordedChunks.length){ showToast('No video data recorded'); return; }
+
+  const mime=mediaRecorder?.mimeType||recordedChunks[0]?.type||'video/mp4';
   const ext=mime.includes('mp4')?'mp4':'webm';
+  const blob=new Blob(recordedChunks,{type:mime});
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
   const filename=`tatelift_${EX_CONFIG[currentExercise].label}_${ts}.${ext}`;
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
 
+  // Web Share API (Android native sheet, iOS share sheet)
   if(navigator.canShare){
     try{
       const file=new File([blob],filename,{type:mime});
       if(navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:'TATELIFT'})
           .then(()=>showToast('✓ 저장 완료'))
-          .catch(e=>{if(e.name!=='AbortError')directDownload(blob,filename,isIOS);});
+          .catch(e=>{ if(e.name!=='AbortError') directDownload(blob,filename,isIOS); });
         return;
       }
     }catch(e){}
@@ -1174,7 +1077,7 @@ function directDownload(blob,filename,isIOS){
   requestAnimationFrame(()=>{
     a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
     showToast('✓ 다운로드 시작');
-    setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},20000);
+    setTimeout(()=>{ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },20000);
   });
 }
 
