@@ -460,35 +460,45 @@ class RepTracker{
         const ascentDur=(now-this._ascentStart)/1000;
         const totalDur=(now-this._repStart)/1000;
 
-        // Next rep: require sustained downward movement (5 frames, ~167ms)
-        // AND must have ascended for at least 0.8s to avoid false triggers
-        if(goDown){
-          this._dc++;
-        } else {
-          this._dc=Math.max(0,this._dc-2); // decay quickly on any up/still
-        }
+        // Track highest point reached (lowest Y value = highest physical position)
+        if(this._peakY===null||y<this._peakY) this._peakY=y;
+
+        // How far from peak are we? (0 = at top, positive = below peak)
+        const distFromPeak=y-this._peakY;
+        // Range of motion estimate
+        const rom=this._botY!==null?Math.abs(this._botY-this._peakY):0.1;
+
+        // Next rep: sustained downward movement
+        if(goDown) this._dc++;
+        else this._dc=Math.max(0,this._dc-2);
+
         if(this._dc>=5 && ascentDur>0.8){
-          this._finish(totalDur, ascentDur, now);
+          this._finish(totalDur,ascentDur,now);
           this._phase=Ph.D;
-          this._dc=0; this._uc=0; this._sc=0;
-          this._repStart=now; this._botY=y;
+          this._dc=0;this._uc=0;this._sc=0;this._peakY=null;
+          this._repStart=now;this._botY=y;
           break;
         }
 
-        // Still at top (~1s)
+        // "Still at top" — only trigger if:
+        // 1. We've been still for ~1s
+        // 2. We're within top 20% of ROM (actually near the top, not sticking point)
+        // 3. Ascent has been going for at least 1s
         if(!goDown&&!goUp) this._sc++;
         else this._sc=0;
-        if(this._sc>=30 && ascentDur>0.5){
-          this._finish(totalDur, ascentDur, now);
+
+        const nearTop=distFromPeak<rom*0.2; // within top 20% of ROM
+        if(this._sc>=30 && ascentDur>1.0 && nearTop){
+          this._finish(totalDur,ascentDur,now);
           this._phase=Ph.W;
-          this._dc=0; this._uc=0; this._sc=0;
-          this._repStart=null; this._botY=null;
+          this._dc=0;this._uc=0;this._sc=0;this._peakY=null;
+          this._repStart=null;this._botY=null;
         }
 
-        // Safety
+        // Safety cap
         if(ascentDur>25){
           this._phase=Ph.W;
-          this._dc=0; this._uc=0; this._sc=0;
+          this._dc=0;this._uc=0;this._sc=0;this._peakY=null;
           this._repStart=null;
         }
         break;
@@ -519,6 +529,7 @@ class RepTracker{
     this._botY=null;
     this._repStart=null; this._ascentStart=null;
     this._dc=0; this._uc=0; this._sc=0;
+    this._peakY=null;
   }
 }
 
