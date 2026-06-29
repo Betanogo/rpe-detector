@@ -842,7 +842,10 @@ const _bandCanvas=document.createElement('canvas');
 function detectLoop(){
   if(!tracking){rafId=null;return;}
   rafId=requestAnimationFrame(detectLoop);
-  if(video.readyState<2||video.currentTime===lastVideoTime) return;
+  if(video.readyState<2) return;
+  if(video.currentTime===lastVideoTime) {
+    // Same frame — still run overlay update but skip detection
+  }
   lastVideoTime=video.currentTime;
   resizeCanvas();
   const now=performance.now();
@@ -897,14 +900,16 @@ function detectLoop(){
 
   if(live){
     renderOverlay(live, W, H);
-    // track movement for auto-stop: if phase changes or rep happens
+    // Always update movement time when tracking is active (not WAITING)
+    // This prevents auto-stop from firing during a rep
     if(live.phase!==Phase.WAITING) lastMovementTime=now;
   } else {
     updatePhaseUI('WAITING');
   }
 
-  // Auto-stop check
-  if(useAutoStop && tracker.repHistory.length>0){
+  // Auto-stop: only fire when in WAITING phase (between reps, not during a rep)
+  const currentPhase=live?.phase??Phase.WAITING;
+  if(useAutoStop && tracker.repHistory.length>0 && currentPhase===Phase.WAITING){
     const idle=(now-lastMovementTime)/1000;
     const pct=Math.min(1, idle/autoStopSec);
     updateAutoStopRing(pct);
