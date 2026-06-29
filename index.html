@@ -919,157 +919,118 @@ function handleStopSet(auto=false){
 }
 
 // ── Recording ─────────────────────────────────────────────
-// Pick the best supported mimeType
-function getBestMime(){
-  const types=[
+// Simple: always record raw camera stream directly.
+// Canvas compositing (overlay) skipped — too unreliable across devices.
+
+function startRecording(){
+  if(!stream||isRecording) return;
+  recordedChunks=[];
+
+  // Always use the raw camera video track — most reliable across all browsers
+  const videoTrack=stream.getVideoTracks()[0];
+  if(!videoTrack){showToast('No camera track');return;}
+  const recStream=new MediaStream([videoTrack]);
+
+  // Find a supported mimeType
+  const mimeOrder=[
     'video/webm;codecs=vp9',
     'video/webm;codecs=vp8',
     'video/webm',
     'video/mp4',
     '',
   ];
-  return types.find(t=>t===''||MediaRecorder.isTypeSupported(t))||'';
-}
-
-function startRecording(){
-  if(!stream||isRecording) return;
-  recordedChunks=[]; liveRpe=null; liveRepNum=0;
-
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
-
-  let recStream=null;
-
-  if(!isIOS){
-    // Non-iOS: composite canvas (video + RPE overlay)
-    try{
-      const W=Math.min(video.videoWidth||1280, 1280);
-      const H=Math.min(video.videoHeight||720, 720);
-      recCanvas.width=W; recCanvas.height=H;
-      recStream=recCanvas.captureStream(30);
-      startCompositeLoop();
-    }catch(e){ recStream=null; }
+  let mime='';
+  for(const m of mimeOrder){
+    if(!m||MediaRecorder.isTypeSupported(m)){mime=m;break;}
   }
 
-  // iOS or canvas capture failed: use raw camera stream
-  if(!recStream){
-    // Get video track from stream directly
-    const videoTrack=stream.getVideoTracks()[0];
-    if(videoTrack){
-      recStream=new MediaStream([videoTrack]);
-    } else {
-      recStream=stream;
-    }
-  }
-
-  const mime=getBestMime();
-  const opts=mime?{mimeType:mime}:{};
   try{
+    const opts=mime?{mimeType:mime}:{};
     mediaRecorder=new MediaRecorder(recStream,opts);
-    mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
-    mediaRecorder.onstop=saveRecording;
-    mediaRecorder.start(500);
-    isRecording=true;
-    showToast('Recording…');
   }catch(e){
-    console.error('MediaRecorder error:',e);
-    // Last resort: try with no mimeType
-    try{
-      mediaRecorder=new MediaRecorder(recStream);
-      mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
-      mediaRecorder.onstop=saveRecording;
-      mediaRecorder.start(500);
-      isRecording=true;
-      showToast('Recording… (fallback mode)');
-    }catch(e2){
-      showToast('Recording not supported: '+e2.message);
-    }
+    try{mediaRecorder=new MediaRecorder(recStream);}
+    catch(e2){showToast('Recording not supported');return;}
   }
+
+  mediaRecorder.ondataavailable=e=>{
+    if(e.data&&e.data.size>0){
+      recordedChunks.push(e.data);
+    }
+  };
+  mediaRecorder.onstop=saveRecording;
+  mediaRecorder.onerror=e=>showToast('Rec error: '+e.error?.message);
+  mediaRecorder.start(1000); // 1s chunks
+  isRecording=true;
+  showToast('REC ●');
 }
 
-let compositeRafId=null;
-function startCompositeLoop(){
-  if(compositeRafId) cancelAnimationFrame(compositeRafId);
-  function loop(){
-    if(!isRecording){compositeRafId=null;return;}
-    compositeRafId=requestAnimationFrame(loop);
-    const W=recCanvas.width,H=recCanvas.height;
-    recCtx.clearRect(0,0,W,H);
-    try{
-      // mirror if front camera
-      if(facingMode==='user'){
-        recCtx.save();
-        recCtx.scale(-1,1);
-        recCtx.drawImage(video,-W,0,W,H);
-        recCtx.restore();
-      } else {
-        recCtx.drawImage(video,0,0,W,H);
-      }
-    }catch(e){}
-    // Draw overlay (scaled to match recCanvas size)
-    try{
-      if(canvas.width>0&&canvas.height>0){
-        recCtx.drawImage(canvas,0,0,W,H);
-      }
-    }catch(e){}
-  }
-  loop();
-}
+let compositeRafId=null; // kept for compat, unused now
+function startCompositeLoop(){}
 
 function stopRecording(){
-  if(!isRecording) return;
+  if(!isRecording||!mediaRecorder) return;
   isRecording=false;
-  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
-  // Request final chunk then stop
   try{
-    mediaRecorder.requestData();
-    setTimeout(()=>mediaRecorder?.stop(), 200);
+    // request any buffered data then stop after short delay
+    if(mediaRecorder.state==='recording'){
+      mediaRecorder.requestData();
+      setTimeout(()=>{
+        if(mediaRecorder.state!=='inactive') mediaRecorder.stop();
+      },300);
+    }
   }catch(e){
-    mediaRecorder?.stop();
+    try{mediaRecorder.stop();}catch(e2){}
   }
 }
 
 function saveRecording(){
-  if(recordedChunks.length===0){showToast('No video data recorded');return;}
-  const mime=recordedChunks[0]?.type||'video/webm';
-  const blob=new Blob(recordedChunks,{type:mime});
-  const ext=mime.includes('mp4')?'mp4':'webm';
-  const filename='tatelift_'+EX_CONFIG[currentExercise].label+'_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.'+ext;
-
-  // Try Web Share API first (iOS + Android native share sheet — includes Save to Files)
-  if(navigator.canShare&&navigator.canShare({files:[new File([blob],filename,{type:mime})]})){
-    navigator.share({files:[new File([blob],filename,{type:mime})],title:'TATELIFT Recording'})
-      .then(()=>showToast('Video shared!'))
-      .catch(e=>{
-        if(e.name!=='AbortError') fallbackSave(blob,filename,mime);
-      });
+  if(recordedChunks.length===0){
+    showToast('No video data recorded');
     return;
   }
-  fallbackSave(blob,filename,mime);
+  const mime=mediaRecorder?.mimeType||recordedChunks[0]?.type||'video/webm';
+  const blob=new Blob(recordedChunks,{type:mime});
+  const ext=mime.includes('mp4')?'mp4':'webm';
+  const filename='tatelift_'
+    +EX_CONFIG[currentExercise].label+'_'
+    +new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')
+    +'.'+ext;
+
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  // Try Web Share API (Android Chrome + iOS Safari)
+  if(navigator.canShare){
+    const file=new File([blob],filename,{type:mime});
+    if(navigator.canShare({files:[file]})){
+      navigator.share({files:[file],title:'TATELIFT'})
+        .then(()=>showToast('✓ 저장 완료'))
+        .catch(e=>{if(e.name!=='AbortError') directDownload(blob,filename,isIOS);});
+      return;
+    }
+  }
+  directDownload(blob,filename,isIOS);
 }
 
-function fallbackSave(blob,filename,mime){
+function directDownload(blob,filename,isIOS){
   const url=URL.createObjectURL(blob);
-  // iOS: any browser on iOS uses WebKit engine — <a download> not supported
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
   if(isIOS){
-    showToast('영상 열림 — 길게 눌러 저장', 5000);
-    setTimeout(()=>{
-      window.location.href=url;
-      setTimeout(()=>URL.revokeObjectURL(url), 60000);
-    }, 300);
-  } else {
-    const a=document.createElement('a');
-    a.style.display='none';
-    a.href=url;
-    a.download=filename;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(()=>{
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 10000);
-    showToast('Video saved!');
+    window.location.href=url;
+    showToast('길게 눌러 저장하세요',5000);
+    setTimeout(()=>URL.revokeObjectURL(url),120000);
+    return;
   }
+  // Android / Desktop
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  a.style.position='fixed';
+  a.style.opacity='0';
+  document.body.appendChild(a);
+  requestAnimationFrame(()=>{
+    a.click();
+    showToast('✓ 다운로드 시작');
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},15000);
+  });
 }
 
 // ── Wake Lock ─────────────────────────────────────────────
