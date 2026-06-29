@@ -239,7 +239,6 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
     <!-- Multi-point tracking chips -->
     <div id="track-chips"></div>
     <div id="toast"></div>
-    <div id="debug-overlay" style="position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.75);color:#fff;font-family:monospace;font-size:11px;padding:6px 10px;border-radius:6px;pointer-events:none;z-index:10;line-height:1.6;display:none;"></div>
     <div id="countdown-overlay">
       <div id="countdown-num">3</div>
       <div id="countdown-label">Get into position…</div>
@@ -254,7 +253,6 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
     <div id="cam-controls">
       <button class="cam-fab" id="btn-cam-off" title="Toggle camera">📷</button>
       <button class="cam-fab" id="btn-cam-flip" title="Flip camera">⟳</button>
-      <button class="cam-fab" id="btn-debug" title="Debug" style="font-size:12px;">DBG</button>
     </div>
   </div>
 
@@ -453,16 +451,15 @@ class EMA{constructor(a=0.3){this.a=a;this.v=null;}
   update(x){this.v=this.v===null?x:this.a*x+(1-this.a)*this.v;return this.v;}
   reset(){this.v=null;}}
 
-// ── RepTracker (pure position-based) ─────────────────────
-// Uses a sliding window of Y positions to determine movement direction.
-// Works regardless of speed — no velocity threshold issues.
+// ── RepTracker (velocity-based, original working version) ────
 const Phase=Object.freeze({WAITING:'WAITING',DESCENDING:'DESCENDING',BOTTOM:'BOTTOM',ASCENDING:'ASCENDING'});
 
 class RepTracker{
   constructor(onRep){
     this.onRep=onRep;
     this.repHistory=[];
-    this._emaPos=new EMA(0.5); // light smoothing for position
+    this._ema=new EMA(0.3);
+    this._velEMA=new EMA(0.25);
     this._reset();
   }
 
@@ -470,30 +467,30 @@ class RepTracker{
     const cfg=EX_CONFIG[exKey]; if(!cfg) return null;
     const primary=cfg.trackGroups[0];
 
-    let rawY=this._resolveY(primary, poseLm, handLms);
-    if(rawY===null && colorBandPt) rawY=colorBandPt.y;
-    else if(rawY!==null && colorBandPt) rawY=rawY*0.6+colorBandPt.y*0.4;
+    const coords=this._resolvePoints(primary, poseLm, handLms);
+    if(!coords.length) return null;
 
-    // If no valid point, hold last known Y (don't break FSM mid-rep)
-    if(rawY===null){
-      if(this._lastY===null) return null; // never had a valid reading
-      rawY=this._lastY; // reuse last known position
-    }
-    this._lastY=rawY;
+    // visibility check — relaxed
+    if(coords.some(c=>(c.visibility??1)<0.2)) return null;
 
-    const y=this._emaPos.update(rawY);
+    let rawY=coords.reduce((s,c)=>s+c.y,0)/coords.length;
+    const rawX=coords.reduce((s,c)=>s+c.x,0)/coords.length;
 
-    // Velocity for display bar only
+    if(colorBandPt) rawY=rawY*0.6+colorBandPt.y*0.4;
+
+    const smoothY=this._ema.update(rawY);
+
     let vel=0;
-    if(this._prevY!==null) vel=(y-this._prevY);
-    this._prevY=y;
+    if(this._prev){
+      const dt=(now-this._prev.now)||1;
+      vel=this._velEMA.update((smoothY-this._prev.y)/dt);
+    }
 
-    // Keep a window of recent Y values (100ms worth at 30fps = ~3 frames)
-    // We compare current Y against recent peak/trough to detect direction
-    this._buf.push({y,t:now});
-    if(this._buf.length>12) this._buf.shift(); // keep ~400ms
+    const isDescending = vel > 0.00015;
+    const isAscending  = vel < -0.00015;
 
-    this._fsm(y, now);
+    this._fsm({y:smoothY,vel,isDescending,isAscending,now});
+    this._prev={y:smoothY,now};
 
     const groupPositions=cfg.trackGroups.map(g=>({
       ...g,
@@ -502,11 +499,26 @@ class RepTracker{
 
     return {
       phase:this._phase,
-      vel:vel*30, // approximate vel/s for display
+      trackedY:smoothY, trackedX:rawX,
+      vel,
       repCount:this.repHistory.length,
       lastRep:this.repHistory[this.repHistory.length-1]??null,
       groupPositions,
     };
+  }
+
+  _resolvePoints(group, poseLm, handLms){
+    if(group.source==='pose'){
+      if(!poseLm||poseLm.length<25) return [];
+      return group.indices.map(i=>poseLm[i]).filter(Boolean);
+    } else {
+      if(!handLms||!handLms.length) return [];
+      const pts=[];
+      handLms.forEach(hand=>{
+        group.indices.forEach(i=>{if(hand[i])pts.push(hand[i]);});
+      });
+      return pts;
+    }
   }
 
   _resolveY(group, poseLm, handLms){
@@ -515,148 +527,78 @@ class RepTracker{
     return pts.reduce((s,p)=>s+p.y,0)/pts.length;
   }
 
-  _resolvePoints(group, poseLm, handLms){
-    if(group.source==='pose'){
-      if(!poseLm||poseLm.length<17) return [];
-      // No visibility check — just filter out missing landmarks
-      const coords=group.indices.map(i=>poseLm[i]).filter(Boolean);
-      return coords;
-    } else {
-      if(!handLms||!handLms.length) return [];
-      const allPts=[];
-      handLms.forEach(hand=>{
-        group.indices.forEach(i=>{if(hand[i])allPts.push(hand[i]);});
-      });
-      return allPts;
-    }
-  }
-
   resetSet(){
     this.repHistory=[];
-    this._emaPos.reset();
-    this._lastY=null;
+    this._ema.reset();
+    this._velEMA.reset();
     this._reset();
   }
 
   _reset(){
     this._phase=Phase.WAITING;
-    this._prevY=null;
-    this._lastY=null; // last valid Y from landmark
-    this._buf=[];
-    this._localMax=null;
-    this._localMin=null;
-    this._repStart=null;
+    this._prev=null;
+    this._bottomY=null;
     this._ascentStart=null;
-    this._downCount=0;
-    this._upCount=0;
-    this._stillCount=0;
+    this._repStart=null;
+    this._lockout=0;
+    this._descentFrames=0;
+    this._stillFrames=0;
   }
 
-  // Sliding window direction detection
-  _direction(){
-    const b=this._buf;
-    if(b.length<4) return 0;
-    const mid=Math.floor(b.length/2);
-    const recent=b.slice(mid).reduce((s,e)=>s+e.y,0)/(b.length-mid);
-    const older=b.slice(0,mid).reduce((s,e)=>s+e.y,0)/mid;
-    const diff=recent-older;
-    const THRESH=0.003;
-    if(diff>THRESH) return 1;   // DOWN
-    if(diff<-THRESH) return -1; // UP
-    return 0;
-  }
-
-  _fsm(y, now){
-    const dir=this._direction();
-    const goingDown=(dir===1);
-    const goingUp=(dir===-1);
-    // Debug overlay on screen
-    const _dbgEl=document.getElementById('debug-overlay');
-    if(_dbgEl&&_dbgEl.style.display!=='none'){
-      _dbgEl.innerHTML=
-        'Phase: <b style="color:#e06c00">'+this._phase+'</b><br>'+
-        'Dir: '+(dir===1?'⬇DOWN':dir===-1?'⬆UP':'—')+'<br>'+
-        'Y: '+y.toFixed(4)+'<br>'+
-        'DC/UC/SC: '+this._downCount+'/'+this._upCount+'/'+this._stillCount+'<br>'+
-        'buf: '+this._buf.length;
-    }
-
+  _fsm({y,vel,isDescending,isAscending,now}){
     switch(this._phase){
+
       case Phase.WAITING:
-        if(goingDown){
-          this._downCount++;
-          if(this._downCount>=3){
+        if(isDescending){
+          this._descentFrames++;
+          if(this._descentFrames>=4){
             this._phase=Phase.DESCENDING;
-            this._downCount=0; this._upCount=0;
+            this._descentFrames=0;
             this._repStart=now;
-            this._localMax=y; this._localMin=y;
           }
         } else {
-          this._downCount=Math.max(0,this._downCount-1);
+          this._descentFrames=Math.max(0,this._descentFrames-1);
         }
         break;
 
       case Phase.DESCENDING:
-        if(y>this._localMax) this._localMax=y;
-        if(goingUp){
-          this._upCount++;
-          if(this._upCount>=2){
-            this._phase=Phase.BOTTOM;
-            this._upCount=0; this._downCount=0;
-          }
-        } else {
-          this._upCount=Math.max(0,this._upCount-1);
-        }
+        if(this._bottomY===null) this._bottomY=y;
+        if(y>this._bottomY) this._bottomY=y;
+        if(isAscending) this._phase=Phase.BOTTOM;
         break;
 
       case Phase.BOTTOM:
-        if(goingUp){
-          this._upCount++;
-          if(this._upCount>=2){
-            this._phase=Phase.ASCENDING;
-            this._ascentStart=now;
-            this._upCount=0; this._downCount=0; this._stillCount=0;
-          }
-        } else {
-          this._upCount=Math.max(0,this._upCount-1);
+        if(isAscending){
+          this._phase=Phase.ASCENDING;
+          this._ascentStart=now;
+          this._stillFrames=0;
         }
         break;
 
       case Phase.ASCENDING:{
+        const velAbs=Math.abs(vel);
+        if(velAbs<0.0004) this._stillFrames++;
+        else this._stillFrames=Math.max(0,this._stillFrames-1);
+
         const dur=(now-this._ascentStart)/1000;
-        if(y<(this._localMin??y)) this._localMin=y;
+        const totalDur=this._repStart?((now-this._repStart)/1000):dur;
 
-        if(goingDown){
-          this._downCount++;
-          if(this._downCount>=2 && dur>0.3){
-            const totalDur=this._repStart?((now-this._repStart)/1000):dur;
-            if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
-            // Immediately transition to next descending rep
-            this._phase=Phase.DESCENDING;
-            this._downCount=0; this._upCount=0; this._stillCount=0;
-            this._repStart=now;
-            this._localMax=y; this._localMin=y;
-          }
-        } else {
-          this._downCount=Math.max(0,this._downCount-1);
-        }
-
-        if(!goingDown&&!goingUp) this._stillCount++;
-        else this._stillCount=0;
-
-        // Held still at top = last rep
-        if(this._stillCount>=30 && dur>0.3){
-          const totalDur=this._repStart?((now-this._repStart)/1000):dur;
-          if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
+        // (A) next rep starting
+        if(isDescending && dur>0.3){
+          if(totalDur>=0.5&&totalDur<=20) this._completeRep(totalDur,dur,now);
           this._phase=Phase.WAITING;
-          this._downCount=0; this._upCount=0; this._stillCount=0;
-          this._repStart=null; this._localMax=null; this._localMin=null;
+          this._bottomY=null; this._stillFrames=0; this._repStart=null;
         }
-
-        if(dur>30){
+        // (B) lockout at top ~1.5s
+        else if(this._stillFrames>=45 && dur>0.3){
+          if(totalDur>=0.5&&totalDur<=20) this._completeRep(totalDur,dur,now);
           this._phase=Phase.WAITING;
-          this._downCount=0; this._upCount=0; this._stillCount=0;
-          this._repStart=null; this._localMax=null; this._localMin=null;
+          this._bottomY=null; this._stillFrames=0; this._repStart=null;
+        }
+        // safety cap
+        else if(dur>20){
+          this._phase=Phase.WAITING;
+          this._bottomY=null; this._stillFrames=0; this._repStart=null;
         }
         break;}
     }
@@ -1306,11 +1248,6 @@ btnReset.addEventListener('click',()=>{
   btnStart.textContent='▶ Start'; btnStart.classList.remove('stopping');
   updatePhaseUI('WAITING'); updateAutoStopRing(0); releaseWakeLock();
   showToast('Set reset');
-});
-
-document.getElementById('btn-debug').addEventListener('click',()=>{
-  const el=document.getElementById('debug-overlay');
-  el.style.display=el.style.display==='none'?'block':'none';
 });
 
 btnCamFlip.addEventListener('click',async()=>{
