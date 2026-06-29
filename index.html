@@ -457,7 +457,7 @@ const Phase=Object.freeze({WAITING:'WAITING',DESCENDING:'DESCENDING',BOTTOM:'BOT
 class RepTracker{
   constructor(onRep){
     this.onRep=onRep; this.repHistory=[];
-    this._ema=new EMA(0.25); this._velEMA=new EMA(0.15);
+    this._ema=new EMA(0.4);  this._velEMA=new EMA(0.3); // pos: moderate, velDisplay: smoothed
     this._reset();
   }
 
@@ -468,26 +468,31 @@ class RepTracker{
     const primary=cfg.trackGroups[0];
 
     // Resolve primary tracking point Y
-    // If color band detected, blend it into primary Y (weighted avg)
     let primaryY=this._resolveY(primary, poseLm, handLms);
     if(primaryY===null && colorBandPt!==null){
-      primaryY=colorBandPt.y; // use band only if pose fails
+      primaryY=colorBandPt.y;
     } else if(primaryY!==null && colorBandPt!==null){
-      primaryY=(primaryY*0.6 + colorBandPt.y*0.4); // blend 60/40
+      primaryY=(primaryY*0.6 + colorBandPt.y*0.4);
     }
     if(primaryY===null) return null;
 
     const smoothY=this._ema.update(primaryY);
-    let vel=0;
+
+    // Raw velocity (frame-to-frame, no EMA) for accurate phase detection
+    let rawVel=0, vel=0;
     if(this._prev){
-      const dt=(now-this._prev.now)||1;
-      vel=this._velEMA.update((smoothY-this._prev.y)/dt);
+      const dt=Math.max((now-this._prev.now), 1);
+      rawVel=(smoothY-this._prev.y)/dt;
+      vel=this._velEMA.update(rawVel);
     }
 
-    const isDescending=vel>0.00008;
-    const isAscending=vel<-0.00008;
+    // Use raw velocity for phase transitions (responsive)
+    // Use EMA velocity for display/bar only
+    const VEL_THRESH=0.00006;
+    const isDescending=rawVel>VEL_THRESH;
+    const isAscending=rawVel<-VEL_THRESH;
 
-    this._fsm({y:smoothY,vel,isDescending,isAscending,now});
+    this._fsm({y:smoothY,vel,rawVel,isDescending,isAscending,now});
     this._prev={y:smoothY,now};
 
     // Resolve all group positions for overlay rendering
@@ -541,7 +546,7 @@ class RepTracker{
     this._descentFrames=0; this._stillFrames=0;
   }
 
-  _fsm({y,vel,isDescending,isAscending,now}){
+  _fsm({y,vel,rawVel,isDescending,isAscending,now}){
     switch(this._phase){
       case Phase.WAITING:
         if(isDescending){this._descentFrames++;if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0;this._repStart=now;}}
@@ -561,16 +566,16 @@ class RepTracker{
         // Track peak position (highest point reached during ascent)
         if(y < (this._peakY??y)) this._peakY=y;
 
-        // Count consecutive frames with near-zero velocity
-        const velAbs=Math.abs(vel);
-        if(velAbs<0.00025) this._stillFrames++;
-        else this._stillFrames=0;
+        // Use raw velocity for still detection — more responsive
+        const rawVelAbs=Math.abs(rawVel);
+        if(rawVelAbs<0.00020) this._stillFrames++;
+        else this._stillFrames=Math.max(0, this._stillFrames-2); // decay quickly on movement
 
         // Rep complete when:
         // (A) clearly descending again after meaningful ascent (next rep starting)
-        // (B) completely still for 1.5s (lockout at top)
-        const fps30equiv=45; // 1.5s × 30fps
-        const nextRepStarting = isDescending && dur>0.5 && velAbs>0.0003;
+        // (B) completely still for 1.0s (lockout at top) — reduced from 1.5s
+        const fps30equiv=30; // 1.0s × 30fps
+        const nextRepStarting = isDescending && dur>0.4 && rawVelAbs>0.00015;
         const lockedOut = this._stillFrames >= fps30equiv && dur>0.4;
 
         if(nextRepStarting || lockedOut){
@@ -951,7 +956,6 @@ function startCountdown(){
       lastMovementTime=performance.now();
       btnStart.textContent='⏸ Stop';
       btnStart.classList.add('stopping');
-      if(autoRecord&&stream&&!isRecording) startRecording();
       detectLoop();
     }
   },1000);
@@ -1205,7 +1209,12 @@ btnStart.addEventListener('click',()=>{
     mReps.textContent='0'; mTime.textContent='—'; mVloss.textContent='—'; mMean.textContent='—';
     rpeVal.textContent='—'; rpeDesc.textContent='—'; rpeFill.style.width='0%';
     requestWakeLock();
-    startCountdown();
+    // Start recording HERE (user gesture context) before async countdown
+    if(autoRecord && !isRecording){
+      startRecording().then(()=>startCountdown());
+    } else {
+      startCountdown();
+    }
   }
 });
 
