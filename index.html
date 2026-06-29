@@ -992,16 +992,13 @@ function handleStopSet(auto=false){
   releaseWakeLock();
 }
 
-// ── Recording (canvas composite, no FFmpeg) ─────────────────
-// Strategy: dedicated RAF loop writes video+overlay to recCanvas
-// independently of MediaPipe loop → no flicker
-
+// ── Recording (getDisplayMedia + crop to camera area) ────────
 const camControls=document.getElementById('cam-controls');
 const repLog=[];
 let recStartTime=0;
 
 function getRecMime(){
-  const order=['video/webm;codecs=vp8','video/webm;codecs=vp9','video/webm'];
+  const order=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
   for(const m of order){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}
   return '';
 }
@@ -1010,78 +1007,92 @@ function setRecUI(on){
   if(camControls) camControls.style.opacity=on?'0':'1';
 }
 
+// Composite loop: screen capture → crop to camera wrap → draw overlay text
 let compositeRafId=null;
+let _screenStream=null;
+let _screenVideo=null; // hidden <video> playing the screen capture
 
 function startCompositeLoop(){
   if(compositeRafId) cancelAnimationFrame(compositeRafId);
-  const W=recCanvas.width, H=recCanvas.height;
 
   function loop(){
     if(!isRecording){compositeRafId=null; return;}
     compositeRafId=requestAnimationFrame(loop);
+    if(!_screenVideo||_screenVideo.readyState<2) return;
 
-    // Draw video frame
-    try{
-      if(facingMode==='user'){
-        recCtx.save(); recCtx.scale(-1,1);
-        recCtx.drawImage(video,-W,0,W,H);
-        recCtx.restore();
-      } else {
-        recCtx.drawImage(video,0,0,W,H);
-      }
-    }catch(e){}
+    const camWrap=document.getElementById('camera-wrap');
+    const rect=camWrap.getBoundingClientRect();
+    const dpr=window.devicePixelRatio||1;
 
-    // Draw pose overlay (skeleton + dots from main canvas)
-    try{
-      if(canvas.width>0 && canvas.height>0)
-        recCtx.drawImage(canvas,0,0,W,H);
-    }catch(e){}
+    // Screen capture dimensions
+    const sw=_screenVideo.videoWidth;
+    const sh=_screenVideo.videoHeight;
 
-    // Draw text overlays
-    drawVideoOverlay(W,H);
+    // Map camWrap rect to screen capture coords
+    const scaleX=sw/window.innerWidth;
+    const scaleY=sh/window.innerHeight;
+
+    const sx=Math.round(rect.left*scaleX);
+    const sy=Math.round(rect.top*scaleY);
+    const sw2=Math.round(rect.width*scaleX);
+    const sh2=Math.round(rect.height*scaleY);
+
+    if(sw2<=0||sh2<=0) return;
+
+    recCanvas.width=sw2;
+    recCanvas.height=sh2;
+
+    // Crop: draw only camera area from screen capture
+    recCtx.drawImage(_screenVideo, sx, sy, sw2, sh2, 0, 0, sw2, sh2);
+
+    // Draw text overlay on top
+    drawVideoOverlay(sw2, sh2);
   }
   loop();
 }
 
-function drawVideoOverlay(W,H){
+function drawVideoOverlay(W, H){
   const repCount=tracker.repHistory.length;
   const avgRpe=repCount
     ?(tracker.repHistory.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1)
     :'—';
   const ex=EX_CONFIG[currentExercise].label;
-  const fs=Math.round(H*0.033);
+  const fs=Math.max(18, Math.round(H*0.045));
   const pad=14;
 
   recCtx.save();
   recCtx.font=`700 ${fs}px 'Space Mono',monospace`;
   recCtx.textBaseline='top';
 
-  // Left top box
+  // Left top: exercise + avg RPE
   const l1=ex, l2=`Avg RPE: ${avgRpe}`;
-  const lw=Math.max(recCtx.measureText(l1).width, recCtx.measureText(l2).width);
-  recCtx.fillStyle='rgba(0,0,0,0.55)';
-  recCtx.beginPath();
-  _rrect(recCtx,pad,pad,lw+20,fs*2+20,6); recCtx.fill();
-  recCtx.fillStyle='#e06c00'; recCtx.fillText(l1,pad+10,pad+6);
-  recCtx.fillStyle='#00e5c8'; recCtx.fillText(l2,pad+10,pad+10+fs);
+  const lw=Math.max(recCtx.measureText(l1).width, recCtx.measureText(l2).width)+20;
+  recCtx.fillStyle='rgba(0,0,0,0.6)';
+  _rrect(recCtx, pad, pad, lw, fs*2+20, 6);
+  recCtx.fill();
+  recCtx.fillStyle='#e06c00'; recCtx.fillText(l1, pad+10, pad+6);
+  recCtx.fillStyle='#00e5c8'; recCtx.fillText(l2, pad+10, pad+10+fs);
 
-  // Right top box
-  const r1=`Rep ${liveRepNum??0}`;
-  const r2=liveRpe!=null?`RPE ${liveRpe}`:'RPE —';
-  const rw=Math.max(recCtx.measureText(r1).width, recCtx.measureText(r2).width);
-  const rx=W-pad-rw-20;
-  recCtx.fillStyle='rgba(0,0,0,0.55)';
-  recCtx.beginPath();
-  _rrect(recCtx,rx,pad,rw+20,fs*2+20,6); recCtx.fill();
-  recCtx.fillStyle='#f0f0f0'; recCtx.fillText(r1,rx+10,pad+6);
-  const rpeCol=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
-  recCtx.fillStyle=liveRpe!=null?rpeCol:'#505050';
-  recCtx.fillText(r2,rx+10,pad+10+fs);
+  // Right top: rep count + current RPE
+  if(liveRepNum>0){
+    const r1=`Rep ${liveRepNum}`;
+    const r2=liveRpe!=null?`RPE ${liveRpe}`:'RPE —';
+    const rw=Math.max(recCtx.measureText(r1).width, recCtx.measureText(r2).width)+20;
+    const rx=W-pad-rw;
+    recCtx.fillStyle='rgba(0,0,0,0.6)';
+    _rrect(recCtx, rx, pad, rw, fs*2+20, 6);
+    recCtx.fill();
+    recCtx.fillStyle='#f0f0f0'; recCtx.fillText(r1, rx+10, pad+6);
+    const rpeCol=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
+    recCtx.fillStyle=liveRpe!=null?rpeCol:'#505050';
+    recCtx.fillText(r2, rx+10, pad+10+fs);
+  }
 
   recCtx.restore();
 }
 
 function _rrect(ctx,x,y,w,h,r){
+  ctx.beginPath();
   ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
   ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
   ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
@@ -1089,60 +1100,105 @@ function _rrect(ctx,x,y,w,h,r){
   ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
 }
 
-function startRecording(){
-  if(!stream||isRecording) return;
+async function startRecording(){
+  if(isRecording) return;
   recordedChunks=[];
   repLog.length=0;
   recStartTime=performance.now();
 
-  // Size recCanvas to 720p
-  const W=1280, H=720;
-  recCanvas.width=W; recCanvas.height=H;
+  // Request screen capture — user picks "this tab"
+  let screenStream;
+  try{
+    screenStream=await navigator.mediaDevices.getDisplayMedia({
+      video:{
+        displaySurface:'browser',
+        width:{ideal:1280},
+        height:{ideal:720},
+        frameRate:{ideal:30},
+      },
+      audio:false,
+      preferCurrentTab:true, // Chrome hint to pre-select current tab
+    });
+  }catch(e){
+    showToast('화면 공유 취소됨');
+    return;
+  }
 
-  // Draw first frame before captureStream so track is live
-  try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
+  _screenStream=screenStream;
 
+  // Create hidden video element to play screen capture
+  _screenVideo=document.createElement('video');
+  _screenVideo.srcObject=screenStream;
+  _screenVideo.muted=true;
+  _screenVideo.playsInline=true;
+  await _screenVideo.play();
+
+  // Init recCanvas from camera-wrap size
+  const camWrap=document.getElementById('camera-wrap');
+  const rect=camWrap.getBoundingClientRect();
+  recCanvas.width=Math.round(rect.width*(window.devicePixelRatio||1));
+  recCanvas.height=Math.round(rect.height*(window.devicePixelRatio||1));
+
+  // Start composite loop first to prime canvas
+  isRecording=true;
+  startCompositeLoop();
+
+  // Wait a moment for first frame
+  await new Promise(r=>setTimeout(r,200));
+
+  // captureStream from our composite recCanvas
   let recStream;
   try{ recStream=recCanvas.captureStream(30); }
-  catch(e){ recStream=stream; }
-
-  // Validate track is live
-  if(!recStream.getVideoTracks().length ||
-     recStream.getVideoTracks()[0].readyState==='ended'){
-    recStream=stream;
+  catch(e){
+    // Fallback: use screen stream directly
+    recStream=screenStream;
+    if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
   }
 
   const mime=getRecMime();
   let mr;
   try{ mr=new MediaRecorder(recStream, mime?{mimeType:mime}:{}); }
-  catch(e){ try{ mr=new MediaRecorder(recStream); }
-    catch(e2){ showToast('녹화 미지원'); return; } }
+  catch(e){ try{ mr=new MediaRecorder(recStream); }catch(e2){ showToast('녹화 미지원'); _cleanup(); return; } }
 
   mr.ondataavailable=e=>{ if(e.data&&e.data.size>0) recordedChunks.push(e.data); };
   mr.onstop=saveRecording;
-  mr.onerror=e=>{ showToast('Rec err'); isRecording=false; setRecUI(false); };
-  mr.start(); // no timeslice → seekable
+  mr.onerror=e=>{ showToast('Rec err'); _cleanup(); };
+
+  // Handle user stopping screen share externally
+  screenStream.getVideoTracks()[0].addEventListener('ended', ()=>{
+    if(isRecording) stopRecording();
+  });
+
+  mr.start();
   mediaRecorder=mr;
-  isRecording=true;
   setRecUI(true);
-  startCompositeLoop(); // start drawing AFTER MediaRecorder is running
-  showToast('REC ●');
+  showToast('REC ● (탭 선택 후 시작)');
+}
+
+function _cleanup(){
+  isRecording=false;
+  setRecUI(false);
+  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
+  if(_screenStream){_screenStream.getTracks().forEach(t=>t.stop());_screenStream=null;}
+  if(_screenVideo){_screenVideo.srcObject=null;_screenVideo=null;}
 }
 
 function stopRecording(){
   if(!isRecording||!mediaRecorder) return;
-  isRecording=false; // stops composite loop
+  const wasRecording=isRecording;
+  isRecording=false;
+  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
   setRecUI(false);
-  setTimeout(()=>{
-    try{
-      if(mediaRecorder.state==='recording'){
-        mediaRecorder.requestData();
-        setTimeout(()=>{
-          try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){}
-        },300);
-      }
-    }catch(e){ try{mediaRecorder.stop();}catch(e2){} }
-  },100); // small delay so last composite frame is captured
+  if(_screenStream){_screenStream.getTracks().forEach(t=>t.stop());_screenStream=null;}
+  if(_screenVideo){_screenVideo.srcObject=null;_screenVideo=null;}
+  try{
+    if(mediaRecorder.state==='recording'){
+      mediaRecorder.requestData();
+      setTimeout(()=>{
+        try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}
+      },300);
+    }
+  }catch(e){ try{mediaRecorder.stop();}catch(e2){} }
 }
 
 function saveRecording(){
