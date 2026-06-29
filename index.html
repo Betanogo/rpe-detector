@@ -460,20 +460,25 @@ class RepTracker{
         const ascentDur=(now-this._ascentStart)/1000;
         const totalDur=(now-this._repStart)/1000;
 
-        // Next rep starting
+        // Next rep: require sustained downward movement (5 frames, ~167ms)
+        // AND must have ascended for at least 0.8s to avoid false triggers
         if(goDown){
-          if(++this._dc>=2 && ascentDur>0.2){
-            this._finish(totalDur, ascentDur, now);
-            this._phase=Ph.D;
-            this._dc=0; this._uc=0; this._sc=0;
-            this._repStart=now; this._botY=y;
-          }
-        } else this._dc=Math.max(0,this._dc-1);
+          this._dc++;
+        } else {
+          this._dc=Math.max(0,this._dc-2); // decay quickly on any up/still
+        }
+        if(this._dc>=5 && ascentDur>0.8){
+          this._finish(totalDur, ascentDur, now);
+          this._phase=Ph.D;
+          this._dc=0; this._uc=0; this._sc=0;
+          this._repStart=now; this._botY=y;
+          break;
+        }
 
-        // Still at top
+        // Still at top (~1s)
         if(!goDown&&!goUp) this._sc++;
         else this._sc=0;
-        if(this._sc>=20 && ascentDur>0.2){ // ~0.67s still
+        if(this._sc>=30 && ascentDur>0.5){
           this._finish(totalDur, ascentDur, now);
           this._phase=Ph.W;
           this._dc=0; this._uc=0; this._sc=0;
