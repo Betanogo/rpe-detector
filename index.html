@@ -917,21 +917,47 @@ function handleStopSet(auto=false){
 }
 
 // ── Recording ─────────────────────────────────────────────
+// Pick the best supported mimeType
+function getBestMime(){
+  const types=[
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+    'video/mp4',
+    '',
+  ];
+  return types.find(t=>t===''||MediaRecorder.isTypeSupported(t))||'';
+}
+
 function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[]; liveRpe=null; liveRepNum=0;
-  let recStream;
-  try{recCanvas.width=canvas.width||640;recCanvas.height=canvas.height||480;recStream=recCanvas.captureStream(30);startCompositeLoop();}
-  catch(e){recStream=stream;}
-  const opts={mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'};
+
+  // Use composite canvas (video + overlay) — cap at 720p for perf/compat
+  const W=Math.min(video.videoWidth||1280, 1280);
+  const H=Math.min(video.videoHeight||720, 720);
+  recCanvas.width=W; recCanvas.height=H;
+
+  let recStream=null;
+  try{ recStream=recCanvas.captureStream(30); }catch(e){}
+
+  // Fallback: raw camera stream (no overlay)
+  if(!recStream) recStream=stream;
+  else startCompositeLoop();
+
+  const mime=getBestMime();
+  const opts=mime?{mimeType:mime}:{};
   try{
     mediaRecorder=new MediaRecorder(recStream,opts);
-    mediaRecorder.ondataavailable=e=>{if(e.data.size>0)recordedChunks.push(e.data);};
+    mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)recordedChunks.push(e.data);};
     mediaRecorder.onstop=saveRecording;
-    mediaRecorder.start(100);
+    mediaRecorder.start(500); // 500ms chunks for reliability
     isRecording=true;
     showToast('Recording…');
-  }catch(e){showToast('Recording not supported');}
+  }catch(e){
+    console.error('MediaRecorder error:',e);
+    showToast('Recording not supported on this browser');
+  }
 }
 
 let compositeRafId=null;
@@ -942,26 +968,65 @@ function startCompositeLoop(){
     compositeRafId=requestAnimationFrame(loop);
     const W=recCanvas.width,H=recCanvas.height;
     recCtx.clearRect(0,0,W,H);
-    try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
-    try{recCtx.drawImage(canvas,0,0,W,H);}catch(e){}
+    try{
+      // mirror if front camera
+      if(facingMode==='user'){
+        recCtx.save();
+        recCtx.scale(-1,1);
+        recCtx.drawImage(video,-W,0,W,H);
+        recCtx.restore();
+      } else {
+        recCtx.drawImage(video,0,0,W,H);
+      }
+    }catch(e){}
+    // Draw overlay (scaled to match recCanvas size)
+    try{
+      if(canvas.width>0&&canvas.height>0){
+        recCtx.drawImage(canvas,0,0,W,H);
+      }
+    }catch(e){}
   }
   loop();
 }
 
 function stopRecording(){
   if(!isRecording) return;
-  mediaRecorder?.stop(); isRecording=false;
+  isRecording=false;
   if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
+  // Request final chunk then stop
+  try{
+    mediaRecorder.requestData();
+    setTimeout(()=>mediaRecorder?.stop(), 200);
+  }catch(e){
+    mediaRecorder?.stop();
+  }
 }
 
 function saveRecording(){
-  const blob=new Blob(recordedChunks,{type:'video/webm'});
+  if(recordedChunks.length===0){showToast('No video data recorded');return;}
+  const mime=recordedChunks[0]?.type||'video/webm';
+  const blob=new Blob(recordedChunks,{type:mime});
+  const ext=mime.includes('mp4')?'mp4':'webm';
+  const filename='tatelift_'+EX_CONFIG[currentExercise].label+'_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.'+ext;
   const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;
-  a.download='tatelift_'+EX_CONFIG[currentExercise].label+'_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.webm';
-  a.click(); URL.revokeObjectURL(url);
-  showToast('Video saved!');
+
+  // iOS Safari: can't do <a download>, open in new tab instead
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
+  if(isIOS){
+    const tab=window.open(url,'_blank');
+    if(!tab) showToast('Allow popups to save video');
+    else showToast('Video opened — long-press to save');
+    // revoke after delay to give tab time to load
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  } else {
+    const a=document.createElement('a');
+    a.href=url; a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+    showToast('Video saved!');
+  }
 }
 
 // ── Wake Lock ─────────────────────────────────────────────
