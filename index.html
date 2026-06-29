@@ -240,6 +240,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
     <div id="track-chips"></div>
     <div id="toast"></div>
     <div id="debug-overlay" style="position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.75);color:#fff;font-family:monospace;font-size:11px;padding:6px 10px;border-radius:6px;pointer-events:none;z-index:10;line-height:1.6;display:none;"></div>
+    <div id="debug-overlay" style="position:absolute;top:50px;left:12px;background:rgba(0,0,0,0.8);color:#fff;font-family:monospace;font-size:12px;padding:8px 12px;border-radius:6px;pointer-events:none;z-index:10;line-height:1.8;display:none;"></div>
     <div id="countdown-overlay">
       <div id="countdown-num">3</div>
       <div id="countdown-label">Get into position…</div>
@@ -254,6 +255,7 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
     <div id="cam-controls">
       <button class="cam-fab" id="btn-cam-off" title="Toggle camera">📷</button>
       <button class="cam-fab" id="btn-cam-flip" title="Flip camera">⟳</button>
+      <button class="cam-fab" id="btn-debug" style="font-size:11px;font-weight:700;">DBG</button>
       <button class="cam-fab" id="btn-debug" title="Debug" style="font-size:12px;">DBG</button>
     </div>
   </div>
@@ -380,8 +382,8 @@ const EX_CONFIG = {
     label: 'Squat',
     concentric: 'up',
     trackGroups: [
-      { source:'pose', indices:[PL.NOSE],              label:'HEAD',  color:'#00e5c8' },
-      { source:'pose', indices:[PL.L_SHOULDER, PL.R_SHOULDER], label:'SHOULDER', color:'#e06c00' },
+      // Primary: HEAD + CHEST(hip) + SHOULDER — 셋 중 잡히는 거 평균
+      { source:'pose', indices:[PL.NOSE, PL.L_HIP, PL.R_HIP, PL.L_SHOULDER, PL.R_SHOULDER], label:'HEAD+BODY', color:'#00e5c8' },
     ],
   },
   BP: {
@@ -560,7 +562,7 @@ class RepTracker{
     const recent=b.slice(mid).reduce((s,e)=>s+e.y,0)/(b.length-mid);
     const older=b.slice(0,mid).reduce((s,e)=>s+e.y,0)/mid;
     const diff=recent-older;
-    const THRESH=0.003;
+    const THRESH=0.004;
     if(diff>THRESH) return 1;   // DOWN
     if(diff<-THRESH) return -1; // UP
     return 0;
@@ -628,7 +630,7 @@ class RepTracker{
 
         if(goingDown){
           this._downCount++;
-          if(this._downCount>=2 && dur>0.3){
+          if(this._downCount>=1 && dur>0.3){
             const totalDur=this._repStart?((now-this._repStart)/1000):dur;
             if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
             // Immediately transition to next descending rep
@@ -645,7 +647,7 @@ class RepTracker{
         else this._stillCount=0;
 
         // Held still at top = last rep
-        if(this._stillCount>=30 && dur>0.3){
+        if(this._stillCount>=15 && dur>0.3){
           const totalDur=this._repStart?((now-this._repStart)/1000):dur;
           if(totalDur>=0.5&&totalDur<=30) this._completeRep(totalDur,dur,now);
           this._phase=Phase.WAITING;
@@ -840,7 +842,10 @@ const _bandCanvas=document.createElement('canvas');
 function detectLoop(){
   if(!tracking){rafId=null;return;}
   rafId=requestAnimationFrame(detectLoop);
-  if(video.readyState<2||video.currentTime===lastVideoTime) return;
+  if(video.readyState<2) return;
+  if(video.currentTime===lastVideoTime) {
+    // Same frame — still run overlay update but skip detection
+  }
   lastVideoTime=video.currentTime;
   resizeCanvas();
   const now=performance.now();
@@ -895,14 +900,16 @@ function detectLoop(){
 
   if(live){
     renderOverlay(live, W, H);
-    // track movement for auto-stop: if phase changes or rep happens
+    // Always update movement time when tracking is active (not WAITING)
+    // This prevents auto-stop from firing during a rep
     if(live.phase!==Phase.WAITING) lastMovementTime=now;
   } else {
     updatePhaseUI('WAITING');
   }
 
-  // Auto-stop check
-  if(useAutoStop && tracker.repHistory.length>0){
+  // Auto-stop: only fire when in WAITING phase (between reps, not during a rep)
+  const currentPhase=live?.phase??Phase.WAITING;
+  if(useAutoStop && tracker.repHistory.length>0 && currentPhase===Phase.WAITING){
     const idle=(now-lastMovementTime)/1000;
     const pct=Math.min(1, idle/autoStopSec);
     updateAutoStopRing(pct);
@@ -1313,6 +1320,10 @@ document.getElementById('btn-debug').addEventListener('click',()=>{
   el.style.display=el.style.display==='none'?'block':'none';
 });
 
+document.getElementById('btn-debug').addEventListener('click',()=>{
+  const el=document.getElementById('debug-overlay');
+  el.style.display=el.style.display==='none'?'block':'none';
+});
 btnCamFlip.addEventListener('click',async()=>{
   facingMode=facingMode==='user'?'environment':'user';
   try{await startCamera();showToast(facingMode==='user'?'Front camera':'Rear camera');}
