@@ -416,20 +416,21 @@ const EX_CONFIG = {
 };
 
 // ── RPE table: concentric duration → RPE ─────────────────
+// Total rep duration (eccentric + concentric) → RPE
 const RPE_TIME_TABLE = [
-  {dur:0.50, rpe:4.0, label:'Warm-up'},
-  {dur:0.65, rpe:4.5, label:'Very Light'},
-  {dur:0.80, rpe:5.0, label:'Light'},
-  {dur:1.00, rpe:5.5, label:'Light-Moderate'},
-  {dur:1.25, rpe:6.0, label:'Moderate'},
-  {dur:1.55, rpe:6.5, label:'Moderate+'},
-  {dur:1.90, rpe:7.0, label:'Somewhat Hard'},
-  {dur:2.35, rpe:7.5, label:'Hard'},
-  {dur:2.90, rpe:8.0, label:'Very Hard'},
-  {dur:3.60, rpe:8.5, label:'Very Hard+'},
-  {dur:4.50, rpe:9.0, label:'Near Max'},
-  {dur:6.00, rpe:9.5, label:'Almost Max'},
-  {dur:8.00, rpe:10,  label:'Max / Fail'},
+  {dur:1.20, rpe:4.0, label:'Warm-up'},
+  {dur:1.60, rpe:4.5, label:'Very Light'},
+  {dur:2.00, rpe:5.0, label:'Light'},
+  {dur:2.40, rpe:5.5, label:'Light-Moderate'},
+  {dur:2.80, rpe:6.0, label:'Moderate'},
+  {dur:3.20, rpe:6.5, label:'Moderate+'},
+  {dur:3.70, rpe:7.0, label:'Somewhat Hard'},
+  {dur:4.30, rpe:7.5, label:'Hard'},
+  {dur:5.00, rpe:8.0, label:'Very Hard'},
+  {dur:6.00, rpe:8.5, label:'Very Hard+'},
+  {dur:7.50, rpe:9.0, label:'Near Max'},
+  {dur:9.50, rpe:9.5, label:'Almost Max'},
+  {dur:12.0, rpe:10,  label:'Max / Fail'},
 ];
 
 function lookupRPE(dur){
@@ -535,6 +536,7 @@ class RepTracker{
   _reset(){
     this._phase=Phase.WAITING; this._prev=null;
     this._bottomY=null; this._ascentStart=null;
+    this._repStart=null;
     this._peakY=null;
     this._descentFrames=0; this._stillFrames=0;
   }
@@ -542,7 +544,7 @@ class RepTracker{
   _fsm({y,vel,isDescending,isAscending,now}){
     switch(this._phase){
       case Phase.WAITING:
-        if(isDescending){this._descentFrames++;if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0;}}
+        if(isDescending){this._descentFrames++;if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0;this._repStart=now;}}
         else this._descentFrames=Math.max(0,this._descentFrames-1);
         break;
       case Phase.DESCENDING:
@@ -572,24 +574,31 @@ class RepTracker{
         const lockedOut = this._stillFrames >= fps30equiv && dur>0.4;
 
         if(nextRepStarting || lockedOut){
-          if(dur>=0.3 && dur<=15) this._completeRep(dur,now);
+          // Total rep time: descent start → ascent end
+          const totalDur=this._repStart?((now-this._repStart)/1000):dur;
+          if(totalDur>=0.5 && totalDur<=20) this._completeRep(totalDur, dur, now);
           this._phase=Phase.WAITING;
-          this._bottomY=null; this._peakY=null; this._stillFrames=0;
+          this._bottomY=null; this._peakY=null; this._stillFrames=0; this._repStart=null;
         }
 
-        // Safety: max 15s cap
-        if(dur>15){
+        // Safety: max 20s cap
+        if(dur>20){
           this._phase=Phase.WAITING;
-          this._bottomY=null; this._peakY=null; this._stillFrames=0;
+          this._bottomY=null; this._peakY=null; this._stillFrames=0; this._repStart=null;
         }
         break;}
     }
   }
 
-  _completeRep(dur,now){
+  _completeRep(totalDur, concentricDur, now){
     const n=this.repHistory.length+1;
-    const {rpe,label}=lookupRPE(dur);
-    const rep={repNumber:n,concentricDuration:+dur.toFixed(3),rpe,rpeLabel:label,timestamp:now};
+    const {rpe,label}=lookupRPE(totalDur);
+    const rep={
+      repNumber:n,
+      totalDuration:+totalDur.toFixed(3),
+      concentricDuration:+concentricDur.toFixed(3),
+      rpe,rpeLabel:label,timestamp:now
+    };
     this.repHistory.push(rep);
     this.onRep?.(rep,[...this.repHistory]);
   }
@@ -620,7 +629,7 @@ const tracker=new RepTracker((rep,history)=>{
   if(isRecording) repLog.push({time:(performance.now()-recStartTime)/1000, repNum:rep.repNumber, rpe:rep.rpe});
   updateMetrics(rep,history);
   addRepRow(rep);
-  showToast(`Rep ${rep.repNumber} ✓  ${rep.concentricDuration}s — RPE ${rep.rpe}`);
+  showToast(`Rep ${rep.repNumber} ✓  ${rep.totalDuration}s — RPE ${rep.rpe}`);
 });
 
 // ── DOM ───────────────────────────────────────────────────
@@ -905,11 +914,11 @@ function updatePhaseUI(phase){
 // ── Metrics ───────────────────────────────────────────────
 function updateMetrics(rep,history){
   mReps.textContent=rep.repNumber;
-  mTime.textContent=rep.concentricDuration.toFixed(2);
+  mTime.textContent=rep.totalDuration.toFixed(2);
   const avgRpe=(history.reduce((s,r)=>s+r.rpe,0)/history.length).toFixed(1);
   mVloss.textContent=avgRpe;
   mVloss.className='metric-val '+(rep.rpe>=9?'danger':rep.rpe>=8?'':'teal');
-  mMean.textContent=(history.reduce((s,r)=>s+r.concentricDuration,0)/history.length).toFixed(2);
+  mMean.textContent=(history.reduce((s,r)=>s+r.totalDuration,0)/history.length).toFixed(2);
   const pct=Math.min(100,((rep.rpe-4)/6)*100);
   rpeFill.style.width=pct+'%';
   rpeFill.style.background=rep.rpe>=9?'#e05555':rep.rpe>=8?'#ffc107':'var(--acc)';
@@ -920,7 +929,7 @@ function updateMetrics(rep,history){
 function addRepRow(rep){
   const tr=document.createElement('tr');
   const cls=rep.rpe>=9?'rpe-high':rep.rpe>=8?'rpe-med':'rpe-ok';
-  tr.innerHTML=`<td>Rep ${rep.repNumber}</td><td>${rep.concentricDuration.toFixed(2)}</td><td class="${cls}">${rep.rpe}</td>`;
+  tr.innerHTML=`<td>Rep ${rep.repNumber}</td><td>${rep.totalDuration.toFixed(2)}</td><td class="${cls}">${rep.rpe}</td>`;
   repTbody.prepend(tr);
 }
 
@@ -982,7 +991,7 @@ function handleStopSet(auto=false){
     setNumber++;
     const history=tracker.repHistory;
     const maxRpe=Math.max(...history.map(r=>r.rpe));
-    const avgDur=(history.reduce((s,r)=>s+r.concentricDuration,0)/history.length).toFixed(2);
+    const avgDur=(history.reduce((s,r)=>s+r.totalDuration,0)/history.length).toFixed(2);
     setHistory.unshift({setNum:setNumber,exercise:EX_CONFIG[currentExercise].label,
       reps:history.length,maxRpe,avgDur,weight:weightKg?`${weightKg}${weightUnit}`:''});
     renderSetsTab();
@@ -1279,7 +1288,7 @@ $('#autostop-sec').addEventListener('change',e=>{autoStopSec=Math.max(2,Math.min
 // ── Set Analyzer ──────────────────────────────────────────
 function openAnalyzer(){
   const h=tracker.repHistory;
-  const mean=h.length?h.reduce((s,r)=>s+r.concentricDuration,0)/h.length:0;
+  const mean=h.length?h.reduce((s,r)=>s+r.totalDuration,0)/h.length:0;
   const maxRpe=h.length?Math.max(...h.map(r=>r.rpe)):0;
   const avgRpe=h.length?(h.reduce((s,r)=>s+r.rpe,0)/h.length).toFixed(1):0;
   const amEl=$('#analyzer-metrics');
@@ -1295,7 +1304,7 @@ function openAnalyzer(){
   if(arEl){
     arEl.innerHTML=[...h].reverse().map(r=>{
       const cls=r.rpe>=9?'rpe-high':r.rpe>=8?'rpe-med':'rpe-ok';
-      return `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Rep ${r.repNumber}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${r.concentricDuration.toFixed(3)}s</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="${cls}">${r.rpe}</td></tr>`;
+      return `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Rep ${r.repNumber}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${r.totalDuration.toFixed(3)}s</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="${cls}">${r.rpe}</td></tr>`;
     }).join('');
   }
   const asEl=$('#analyzer-sets');
