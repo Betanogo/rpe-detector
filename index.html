@@ -18,82 +18,123 @@
   --sb:env(safe-area-inset-bottom,0px);
 }
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--fb);overflow:hidden;-webkit-font-smoothing:antialiased;}
-
-/* ── SHELL ── */
 #app{display:grid;grid-template-rows:auto 1fr auto;height:100dvh;max-width:480px;margin:0 auto;}
 
 /* ── TOP BAR ── */
 #topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg);}
-#nav-logo{font-family:var(--fm);font-size:16px;font-weight:700;color:var(--acc);cursor:pointer;flex-shrink:0;}
+#nav-logo{font-family:var(--fm);font-size:16px;font-weight:700;color:var(--acc);flex-shrink:0;}
 #exercise-select{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fb);font-size:13px;font-weight:600;padding:7px 10px;outline:none;cursor:pointer;}
 #exercise-select option{background:var(--s2);}
-#cam-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,border-color .15s;flex-shrink:0;}
-#cam-btn:hover{color:var(--acc);border-color:var(--acc);}
+#btn-settings{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,border-color .15s;flex-shrink:0;}
+#btn-settings:hover,#btn-settings.active{color:var(--acc);border-color:var(--acc);}
+
+/* ── SETTINGS DRAWER ── */
+#settings-drawer{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);}
+#settings-drawer.open{display:block;}
+#settings-panel{position:absolute;top:0;right:0;bottom:0;width:min(300px,85vw);background:var(--s1);border-left:1px solid var(--border);display:flex;flex-direction:column;padding:20px 18px;overflow-y:auto;gap:0;}
+.settings-title{font-family:var(--fm);font-size:13px;font-weight:700;color:var(--acc);letter-spacing:.1em;margin-bottom:20px;}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--border);}
+.setting-label{font-size:13px;font-weight:600;color:var(--text);}
+.setting-desc{font-size:11px;color:var(--text3);margin-top:3px;}
+.toggle{position:relative;width:44px;height:26px;flex-shrink:0;}
+.toggle input{opacity:0;width:0;height:0;}
+.toggle-slider{position:absolute;inset:0;background:var(--s3);border-radius:13px;cursor:pointer;transition:background .2s;}
+.toggle-slider::before{content:'';position:absolute;width:20px;height:20px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform .2s;}
+.toggle input:checked+.toggle-slider{background:var(--acc);}
+.toggle input:checked+.toggle-slider::before{transform:translateX(18px);}
+/* auto-stop seconds input */
+.num-input{width:52px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--fm);font-size:14px;font-weight:700;padding:4px 6px;text-align:center;outline:none;}
+.num-input:focus{border-color:var(--acc);}
 
 /* ── CAMERA ── */
 #camera-wrap{position:relative;background:#000;overflow:hidden;}
 #video{width:100%;height:100%;object-fit:cover;display:block;}
 #overlay{position:absolute;inset:0;pointer-events:none;}
+#rec-canvas{display:none;}
+.cam-off-screen{position:absolute;inset:0;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:2;}
+.cam-off-screen.visible{display:flex;}
+.cam-off-screen .icon{font-size:40px;opacity:.3;}
+.cam-off-screen .label{font-size:12px;color:var(--text3);}
 
 /* ── PHASE BADGE ── */
-#phase-badge{
-  position:absolute;top:12px;left:50%;transform:translateX(-50%);
-  font-family:var(--fm);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
-  padding:5px 14px;border-radius:6px;
-  background:rgba(13,13,13,0.75);border:1px solid var(--border);
-  color:var(--text3);backdrop-filter:blur(6px);pointer-events:none;
-  transition:color .15s,border-color .15s;
-}
+#phase-badge{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-family:var(--fm);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 14px;border-radius:6px;background:rgba(13,13,13,0.75);border:1px solid var(--border);color:var(--text3);backdrop-filter:blur(6px);pointer-events:none;transition:color .15s,border-color .15s;}
 #phase-badge.descending{color:#ffc107;border-color:#ffc107;}
 #phase-badge.bottom{color:var(--acc);border-color:var(--acc);}
 #phase-badge.ascending{color:var(--teal);border-color:var(--teal);}
 
-/* ── TRACKING CHIP ── */
-#track-chip{
-  position:absolute;top:12px;left:12px;
-  background:rgba(13,13,13,0.75);border:1px solid var(--border);
-  border-radius:6px;padding:5px 9px;backdrop-filter:blur(6px);pointer-events:none;
-}
-#track-chip .tv{font-family:var(--fm);font-size:12px;font-weight:700;color:var(--teal);}
-#track-chip .tl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:1px;}
+/* ── TRACK CHIPS (multiple) ── */
+#track-chips{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:5px;pointer-events:none;}
+.track-chip{background:rgba(13,13,13,0.75);border:1px solid var(--border);border-radius:6px;padding:4px 8px;backdrop-filter:blur(6px);}
+.track-chip .tv{font-family:var(--fm);font-size:11px;font-weight:700;color:var(--teal);}
+.track-chip .tl{font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:1px;}
 
-/* ── COUNTDOWN OVERLAY ── */
-#countdown-overlay{
-  position:absolute;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
-  background:rgba(0,0,0,.75);backdrop-filter:blur(4px);
-  pointer-events:none;opacity:0;transition:opacity .3s;z-index:5;
-}
+/* ── AUTO-STOP TIMER indicator ── */
+#autostop-ring{position:absolute;bottom:66px;right:14px;width:36px;height:36px;pointer-events:none;display:none;}
+#autostop-ring.visible{display:block;}
+
+/* ── COUNTDOWN ── */
+#countdown-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);pointer-events:none;opacity:0;transition:opacity .3s;z-index:5;}
 #countdown-overlay.visible{opacity:1;}
 #countdown-num{font-family:var(--fm);font-weight:700;font-size:110px;line-height:1;color:var(--acc);animation:pulse 1s ease-in-out infinite;}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 #countdown-label{font-size:14px;color:var(--text2);margin-top:8px;letter-spacing:.1em;}
 
-/* ── BOTTOM PANEL ── */
-#panel{background:var(--s1);border-top:1px solid var(--border);padding:12px 14px calc(12px + var(--sb));display:flex;flex-direction:column;gap:10px;}
+/* ── CAM CONTROLS (bottom-left) ── */
+#cam-controls{position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:flex-start;gap:10px;padding:0 14px;pointer-events:none;z-index:3;}
+#cam-controls button{pointer-events:all;}
+.cam-fab{width:44px;height:44px;border-radius:50%;background:rgba(13,13,13,0.75);border:2px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);transition:all .2s;}
+.cam-fab:hover{border-color:var(--acc);color:var(--acc);}
+#btn-cam-off.off{background:var(--s3);border-color:var(--text3);color:var(--text3);}
 
-/* ── METRICS ROW ── */
+/* ── PANEL ── */
+#panel{background:var(--s1);border-top:1px solid var(--border);padding:10px 14px calc(10px + var(--sb));display:flex;flex-direction:column;gap:8px;}
+
+/* weight + start */
+#weight-start-row{display:flex;gap:8px;align-items:center;}
+#weight-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fm);font-size:15px;font-weight:600;padding:8px 10px;outline:none;transition:border-color .2s;min-width:0;}
+#weight-in:focus{border-color:var(--acc);}
+#weight-in::placeholder{color:var(--text3);}
+.unit-seg{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:8px 12px;cursor:pointer;transition:background .15s,color .15s;}
+.unit-seg-btn.active{background:var(--acc);color:#000;font-weight:700;}
+#btn-start{background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--fm);font-size:14px;font-weight:700;padding:10px 16px;cursor:pointer;white-space:nowrap;transition:opacity .15s,transform .1s;}
+#btn-start:active{transform:scale(.97);opacity:.85;}
+#btn-start.stopping{background:var(--danger);}
+
+/* rpe + reset */
+#rpe-reset-row{display:flex;gap:8px;align-items:center;}
+#rpe-mini{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;min-width:0;}
+#rpe-mini-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
+#rpe-label{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);}
+#rpe-right{display:flex;align-items:baseline;gap:6px;}
+#rpe-desc{font-size:10px;color:var(--text3);}
+#rpe-val{font-family:var(--fm);font-weight:700;font-size:18px;color:var(--acc);}
+#rpe-track{height:5px;background:var(--s3);border-radius:2px;overflow:hidden;}
+#rpe-fill{height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .6s cubic-bezier(0.16,1,0.3,1),background .4s;}
+#btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:10px 14px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s;}
+#btn-reset:hover{color:var(--danger);border-color:var(--danger);}
+
+/* metrics */
 #metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;}
-.metric{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:9px 6px 7px;text-align:center;}
-.metric-val{font-family:var(--fm);font-weight:700;font-size:24px;line-height:1;color:var(--text);}
+.metric{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 6px 6px;text-align:center;}
+.metric-val{font-family:var(--fm);font-weight:700;font-size:20px;line-height:1;color:var(--text);}
 .metric-val.acc{color:var(--acc);}
 .metric-val.teal{color:var(--teal);}
 .metric-val.danger{color:var(--danger);}
-.metric-label{font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px;}
+.metric-label{font-size:8px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px;}
 
-/* ── RPE BAR ── */
-#rpe-wrap{display:flex;flex-direction:column;gap:5px;}
-#rpe-header{display:flex;justify-content:space-between;align-items:baseline;}
-#rpe-label{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);}
-#rpe-right{display:flex;align-items:baseline;gap:8px;}
-#rpe-desc{font-size:11px;color:var(--text3);}
-#rpe-val{font-family:var(--fm);font-weight:700;font-size:20px;color:var(--acc);}
-#rpe-track{height:8px;background:var(--s3);border-radius:2px;overflow:hidden;position:relative;}
-#rpe-track::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0px,transparent 18px,rgba(0,0,0,.3) 18px,rgba(0,0,0,.3) 20px);}
-#rpe-fill{height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .6s cubic-bezier(0.16,1,0.3,1),background .4s;}
+/* tabs */
+.tab-wrap{position:relative;}
+#tabs{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.tab-btn{flex:1;background:var(--s2);color:var(--text3);border:none;font-family:var(--fb);font-size:11px;font-weight:500;padding:7px;cursor:pointer;transition:background .15s,color .15s;}
+.tab-btn.active{color:var(--acc);border-bottom:2px solid var(--acc);}
+#tab-current,#tab-sets{display:none;}
+#tab-current.visible,#tab-sets.visible{display:block;}
+#btn-expand{position:absolute;top:5px;right:6px;width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--s3);color:var(--text3);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+#btn-expand:hover{color:var(--acc);}
 
-/* ── REP HISTORY ── */
-#history-wrap{max-height:100px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;scrollbar-width:thin;}
+/* rep table */
+#history-wrap{max-height:90px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;scrollbar-width:thin;}
 #rep-table{width:100%;border-collapse:collapse;font-family:var(--fm);font-size:11px;}
 #rep-table thead th{position:sticky;top:0;background:var(--s2);color:var(--text3);font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-family:var(--fb);font-weight:600;padding:5px 7px;text-align:right;border-bottom:1px solid var(--border);}
 #rep-table thead th:first-child{text-align:left;}
@@ -103,98 +144,24 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .rpe-med{color:#ffc107!important;}
 .rpe-ok{color:var(--teal)!important;}
 
-/* ── TABS ── */
-#tabs{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
-.tab-btn{flex:1;background:var(--s2);color:var(--text3);border:none;font-family:var(--fb);font-size:11px;font-weight:500;padding:7px;cursor:pointer;transition:background .15s,color .15s;}
-.tab-btn.active{color:var(--acc);border-bottom:2px solid var(--acc);}
-#tab-current,#tab-sets{display:none;}
-#tab-current.visible,#tab-sets.visible{display:block;}
-
-/* ── ACTIONS ── */
-#actions{display:grid;grid-template-columns:1fr auto auto;gap:8px;}
-#btn-start{background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--fm);font-size:14px;font-weight:700;padding:12px;cursor:pointer;transition:opacity .15s,transform .1s;}
-#btn-start:active{transform:scale(.97);opacity:.85;}
-#btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:12px 14px;cursor:pointer;transition:color .15s,border-color .15s;}
-#btn-reset:hover{color:var(--danger);border-color:var(--danger);}
-#btn-cam-flip{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:16px;padding:12px 14px;cursor:pointer;transition:color .15s;}
-#btn-cam-flip:hover{color:var(--acc);}
-
-/* ── WEIGHT INPUT ── */
-#weight-row{display:flex;gap:8px;align-items:center;}
-#weight-in{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--fm);font-size:15px;font-weight:600;padding:8px 10px;outline:none;transition:border-color .2s;}
-#weight-in:focus{border-color:var(--acc);}
-#weight-in::placeholder{color:var(--text3);}
-.unit-seg{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
-.unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:8px 14px;cursor:pointer;transition:background .15s,color .15s;}
-.unit-seg-btn.active{background:var(--acc);color:#000;font-weight:700;}
-
-/* ── RECORD BUTTON ── */
-#btn-record{
-  position:absolute;bottom:14px;right:14px;
-  width:44px;height:44px;border-radius:50%;
-  background:rgba(13,13,13,0.75);border:2px solid var(--border);
-  color:var(--text2);font-size:18px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  backdrop-filter:blur(6px);transition:all .2s;z-index:3;
-}
-#btn-record.recording{background:var(--danger);border-color:var(--danger);color:#fff;animation:recPulse 1s ease-in-out infinite;}
-@keyframes recPulse{0%,100%{opacity:1}50%{opacity:.6}}
-#btn-cam-off{
-  position:absolute;bottom:14px;left:14px;
-  width:44px;height:44px;border-radius:50%;
-  background:rgba(13,13,13,0.75);border:2px solid var(--border);
-  color:var(--text2);font-size:16px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  backdrop-filter:blur(6px);transition:all .2s;z-index:3;
-}
-#btn-cam-off.off{background:var(--s3);border-color:var(--text3);color:var(--text3);}
-.cam-off-screen{
-  position:absolute;inset:0;background:var(--bg);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:10px;z-index:2;display:none;
-}
-.cam-off-screen.visible{display:flex;}
-.cam-off-screen .icon{font-size:40px;opacity:.3;}
-.cam-off-screen .label{font-size:12px;color:var(--text3);}
-
-/* ── SET ANALYZER FULLSCREEN ── */
-#analyzer-overlay{
-  position:fixed;inset:0;background:var(--bg);z-index:500;
-  display:flex;flex-direction:column;
-  transform:translateY(100%);transition:transform .35s cubic-bezier(0.16,1,0.3,1);
-}
-#analyzer-overlay.open{transform:translateY(0);}
-#analyzer-header{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:14px 16px;border-bottom:1px solid var(--border);
-  background:var(--s1);flex-shrink:0;
-}
-#analyzer-title{font-family:var(--fm);font-size:15px;font-weight:700;color:var(--text);}
-#analyzer-close{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
-#analyzer-body{flex:1;overflow-y:auto;padding:16px;}
-
-/* ── EXPAND BTN ── */
-#btn-expand{
-  position:absolute;top:8px;right:8px;
-  width:26px;height:26px;border-radius:6px;
-  border:1px solid var(--border);background:var(--s3);
-  color:var(--text3);font-size:12px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transition:color .15s;
-}
-#btn-expand:hover{color:var(--acc);}
-.tab-wrap{position:relative;}
-
-/* ── TOAST ── */
-#toast{position:fixed;bottom:calc(20px + var(--sb));left:50%;transform:translateX(-50%) translateY(30px);background:var(--s3);color:var(--text);font-size:11px;font-weight:500;padding:8px 16px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:200;}
+/* toast */
+#toast{position:fixed;bottom:calc(20px + var(--sb));left:50%;transform:translateX(-50%) translateY(30px);background:var(--s3);color:var(--text);font-size:11px;font-weight:500;padding:8px 16px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:400;}
 #toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
 
-/* ── LOADING ── */
+/* loading */
 #loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:100;}
 .load-logo{font-family:var(--fm);font-weight:700;font-size:36px;color:var(--acc);}
 .spinner{width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
 .load-status{font-size:12px;color:var(--text3);font-family:var(--fm);}
+
+/* analyzer */
+#analyzer-overlay{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .35s cubic-bezier(0.16,1,0.3,1);}
+#analyzer-overlay.open{transform:translateY(0);}
+#analyzer-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;}
+#analyzer-title{font-family:var(--fm);font-size:15px;font-weight:700;color:var(--text);}
+#analyzer-close{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+#analyzer-body{flex:1;overflow-y:auto;padding:16px;}
 </style>
 </head>
 <body>
@@ -207,76 +174,105 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 
 <div id="toast"></div>
 
+<!-- Settings Drawer -->
+<div id="settings-drawer">
+  <div id="settings-panel">
+    <div class="settings-title">⚙ SETTINGS</div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Auto-Record</div><div class="setting-desc">세트 시작/종료와 녹화 자동 연동</div></div>
+      <label class="toggle"><input type="checkbox" id="tog-record"/><span class="toggle-slider"></span></label>
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">Wake Lock</div><div class="setting-desc">화면 자동 꺼짐 방지</div></div>
+      <label class="toggle"><input type="checkbox" id="tog-wakelock" checked/><span class="toggle-slider"></span></label>
+    </div>
+
+    <div class="setting-row" style="border:none;">
+      <div><div class="setting-label">자동 세트 종료</div><div class="setting-desc">X초 움직임 없으면 자동 저장</div></div>
+      <label class="toggle"><input type="checkbox" id="tog-autostop" checked/><span class="toggle-slider"></span></label>
+    </div>
+    <div style="padding:8px 0 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <span style="font-size:12px;color:var(--text3);">정지 판정 시간</span>
+      <input type="number" class="num-input" id="autostop-sec" value="4" min="2" max="30"/>
+      <span style="font-size:12px;color:var(--text3);">초</span>
+    </div>
+
+    <div style="margin-top:auto;padding-top:24px;">
+      <button id="settings-close-btn" style="width:100%;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-family:var(--fm);font-size:13px;padding:12px;cursor:pointer;">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="app">
-  <!-- Topbar -->
   <header id="topbar">
     <div id="nav-logo">RPE</div>
     <select id="exercise-select">
-      <option value="SQ">Squat (Head)</option>
-      <option value="BP">Bench Press (Wrist)</option>
-      <option value="DL">Deadlift (Wrist)</option>
-      <option value="OHP">OHP (Wrist)</option>
-      <option value="RDL">RDL (Wrist)</option>
-      <option value="CUSTOM">Custom…</option>
+      <option value="SQ">Squat</option>
+      <option value="BP">Bench Press</option>
+      <option value="DL">Deadlift</option>
+      <option value="OHP">OHP</option>
+      <option value="RDL">RDL</option>
     </select>
-    <button id="cam-btn" title="Flip camera">⟳</button>
+    <button id="btn-settings" title="Settings">⚙</button>
   </header>
 
-  <!-- Camera -->
   <div id="camera-wrap">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="overlay"></canvas>
-    <!-- Camera off screen -->
+    <canvas id="rec-canvas"></canvas>
     <div class="cam-off-screen" id="cam-off-screen">
-      <div class="icon">📷</div>
-      <div class="label">Camera is off</div>
+      <div class="icon">📷</div><div class="label">Camera is off</div>
     </div>
     <div id="phase-badge">Ready</div>
-    <div id="track-chip">
-      <div class="tv" id="track-point-label">HEAD</div>
-      <div class="tl">Tracking</div>
-    </div>
+    <!-- Multi-point tracking chips -->
+    <div id="track-chips"></div>
     <div id="countdown-overlay">
-      <div id="countdown-num">4</div>
+      <div id="countdown-num">3</div>
       <div id="countdown-label">Get into position…</div>
     </div>
-    <!-- Camera controls -->
-    <button id="btn-cam-off" title="Toggle camera">📷</button>
-    <button id="btn-record" title="Record video">⏺</button>
+    <!-- auto-stop ring indicator -->
+    <svg id="autostop-ring" viewBox="0 0 36 36">
+      <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3"/>
+      <circle id="autostop-arc" cx="18" cy="18" r="15" fill="none" stroke="#e05555" stroke-width="3"
+        stroke-dasharray="94.2" stroke-dashoffset="94.2" stroke-linecap="round"
+        transform="rotate(-90 18 18)"/>
+    </svg>
+    <div id="cam-controls">
+      <button class="cam-fab" id="btn-cam-off" title="Toggle camera">📷</button>
+      <button class="cam-fab" id="btn-cam-flip" title="Flip camera">⟳</button>
+    </div>
   </div>
 
-  <!-- Panel -->
   <section id="panel">
-    <!-- Weight -->
-    <div id="weight-row">
+    <div id="weight-start-row">
       <input type="number" id="weight-in" placeholder="Weight (kg)" step="0.5"/>
       <div class="unit-seg">
         <button class="unit-seg-btn active" data-unit="kg">kg</button>
         <button class="unit-seg-btn" data-unit="lb">lb</button>
       </div>
+      <button id="btn-start">▶ Start</button>
     </div>
 
-    <!-- Metrics -->
+    <div id="rpe-reset-row">
+      <div id="rpe-mini">
+        <div id="rpe-mini-header">
+          <span id="rpe-label">RPE Estimate</span>
+          <div id="rpe-right"><span id="rpe-desc">—</span><span id="rpe-val">—</span></div>
+        </div>
+        <div id="rpe-track"><div id="rpe-fill"></div></div>
+      </div>
+      <button id="btn-reset">Reset</button>
+    </div>
+
     <div id="metrics">
       <div class="metric"><div class="metric-val acc" id="m-reps">0</div><div class="metric-label">Reps</div></div>
-      <div class="metric"><div class="metric-val" id="m-time">—</div><div class="metric-label">Conc (s)</div></div>
-      <div class="metric"><div class="metric-val teal" id="m-vloss">0%</div><div class="metric-label">V-Loss</div></div>
-      <div class="metric"><div class="metric-val" id="m-mean">—</div><div class="metric-label">Avg (s)</div></div>
+      <div class="metric"><div class="metric-val" id="m-time">—</div><div class="metric-label">Conc(s)</div></div>
+      <div class="metric"><div class="metric-val teal" id="m-vloss">—</div><div class="metric-label">Avg RPE</div></div>
+      <div class="metric"><div class="metric-val" id="m-mean">—</div><div class="metric-label">Avg(s)</div></div>
     </div>
 
-    <!-- RPE Bar -->
-    <div id="rpe-wrap">
-      <div id="rpe-header">
-        <span id="rpe-label">RPE Estimate</span>
-        <div id="rpe-right">
-          <span id="rpe-desc">—</span>
-          <span id="rpe-val">—</span>
-        </div>
-      </div>
-      <div id="rpe-track"><div id="rpe-fill"></div></div>
-    </div>
-
-    <!-- Tabs -->
     <div class="tab-wrap">
       <div id="tabs">
         <button class="tab-btn active" data-tab="current">This Set</button>
@@ -288,31 +284,23 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
     <div id="tab-current" class="visible">
       <div id="history-wrap">
         <table id="rep-table">
-          <thead><tr><th>Rep</th><th>Time(s)</th><th>V-Loss</th><th>RPE</th></tr></thead>
+          <thead><tr><th>Rep</th><th>Time(s)</th><th>RPE</th></tr></thead>
           <tbody id="rep-tbody"></tbody>
         </table>
       </div>
     </div>
-
     <div id="tab-sets">
-      <div id="history-wrap" style="max-height:100px">
+      <div id="history-wrap" style="max-height:90px">
         <table id="rep-table">
-          <thead><tr><th>Set</th><th>Ex</th><th>Reps</th><th>RPE</th><th>Weight</th></tr></thead>
+          <thead><tr><th>Set</th><th>Ex</th><th>Reps</th><th>RPE</th><th>Wt</th></tr></thead>
           <tbody id="sets-tbody"></tbody>
         </table>
       </div>
     </div>
-
-    <!-- Actions -->
-    <div id="actions">
-      <button id="btn-start">▶ Start Set</button>
-      <button id="btn-reset">Reset</button>
-      <button id="btn-cam-flip">⟳</button>
-    </div>
   </section>
 </div>
 
-<!-- Set Analyzer Fullscreen -->
+<!-- Analyzer -->
 <div id="analyzer-overlay">
   <div id="analyzer-header">
     <div id="analyzer-title">Set Analyzer</div>
@@ -325,10 +313,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Rep by Rep</div>
       <table style="width:100%;border-collapse:collapse;font-family:var(--fm);font-size:12px;">
         <thead><tr>
-          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">Rep</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">Time</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">V-Loss</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;letter-spacing:.08em;text-transform:uppercase;">RPE</th>
+          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Rep</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Time(s)</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">RPE</th>
         </tr></thead>
         <tbody id="analyzer-reps"></tbody>
       </table>
@@ -338,10 +325,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <table style="width:100%;border-collapse:collapse;font-family:var(--fm);font-size:12px;">
         <thead><tr>
           <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Set</th>
-          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Exercise</th>
+          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Ex</th>
           <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Reps</th>
           <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">RPE</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Weight</th>
+          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Wt</th>
         </tr></thead>
         <tbody id="analyzer-sets"></tbody>
       </table>
@@ -350,207 +337,244 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 </div>
 
 <script type="module">
-import { PoseLandmarker, FilesetResolver, DrawingUtils }
-  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm';
+import {
+  PoseLandmarker, FilesetResolver, DrawingUtils
+} from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm';
 
-// ── Landmark indices ──────────────────────────────────────
-const LM = {
-  NOSE:0, HEAD:0,
+// We also load HandLandmarker from the same package
+import {
+  HandLandmarker
+} from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm';
+
+// ── Pose landmark indices ─────────────────────────────────
+const PL = {
+  NOSE:0,
   L_WRIST:15, R_WRIST:16,
-  L_HIP:23, R_HIP:24,
-  L_KNEE:25, R_KNEE:26,
-  L_ANKLE:27, R_ANKLE:28,
+  L_HIP:23,   R_HIP:24,
+  L_SHOULDER:11, R_SHOULDER:12,
 };
 
-// Exercise config: which landmarks to track + movement direction
+// ── Exercise configs ──────────────────────────────────────
+// trackGroups: array of groups; each group is {source, indices, label, color}
+// source: 'pose' | 'hand'
+// For pose: indices = PL landmark indices
+// For hand: indices = hand landmark indices (0=wrist, 9=middle_mcp, etc.)
+// primary group (index 0) drives the FSM
+
 const EX_CONFIG = {
-  SQ:  { label:'Squat',         track:'HEAD',   landmarks:[LM.NOSE],             axis:'y', concentric:'up',   description:'Head tracking' },
-  BP:  { label:'Bench Press',   track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
-  DL:  { label:'Deadlift',      track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
-  OHP: { label:'OHP',           track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
-  RDL: { label:'RDL',           track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
-  CUSTOM:{ label:'Custom',      track:'WRIST',  landmarks:[LM.L_WRIST,LM.R_WRIST], axis:'y', concentric:'up',   description:'Wrist tracking' },
+  SQ: {
+    label: 'Squat',
+    concentric: 'up',
+    trackGroups: [
+      { source:'pose', indices:[PL.NOSE],              label:'HEAD',  color:'#00e5c8' },
+      { source:'pose', indices:[PL.L_HIP, PL.R_HIP],  label:'CHEST', color:'#e06c00' },
+    ],
+  },
+  BP: {
+    label: 'Bench Press',
+    concentric: 'up',
+    trackGroups: [
+      { source:'hand', indices:[0],                          label:'HAND',  color:'#00e5c8' },
+      { source:'pose', indices:[PL.L_WRIST, PL.R_WRIST],    label:'WRIST', color:'#e06c00' },
+    ],
+  },
+  DL: {
+    label: 'Deadlift',
+    concentric: 'up',
+    trackGroups: [
+      { source:'hand', indices:[0],                              label:'HAND',  color:'#00e5c8' },
+      { source:'pose', indices:[PL.L_HIP, PL.R_HIP],            label:'HIP',   color:'#e06c00' },
+    ],
+  },
+  OHP: {
+    label: 'OHP',
+    concentric: 'up',
+    trackGroups: [
+      { source:'pose', indices:[PL.L_WRIST, PL.R_WRIST], label:'WRIST', color:'#00e5c8' },
+    ],
+  },
+  RDL: {
+    label: 'RDL',
+    concentric: 'up',
+    trackGroups: [
+      { source:'hand', indices:[0],                       label:'HAND',  color:'#00e5c8' },
+    ],
+  },
 };
 
-// RPE table
-const RPE_TABLE = [
-  {loss:0,  rpe:4.0, label:'Warm-up'},
-  {loss:2,  rpe:4.5, label:'Very Light'},
-  {loss:4,  rpe:5.0, label:'Light'},
-  {loss:6,  rpe:5.5, label:'Light-Moderate'},
-  {loss:8,  rpe:6.0, label:'Moderate'},
-  {loss:10, rpe:6.5, label:'Moderate+'},
-  {loss:13, rpe:7.0, label:'Somewhat Hard'},
-  {loss:16, rpe:7.5, label:'Hard'},
-  {loss:20, rpe:8.0, label:'Very Hard'},
-  {loss:25, rpe:8.5, label:'Very Hard+'},
-  {loss:30, rpe:9.0, label:'Near Max'},
-  {loss:40, rpe:9.5, label:'Almost Max'},
-  {loss:50, rpe:10,  label:'Max'},
+// ── RPE table: concentric duration → RPE ─────────────────
+const RPE_TIME_TABLE = [
+  {dur:0.45, rpe:4.0, label:'Warm-up'},
+  {dur:0.55, rpe:4.5, label:'Very Light'},
+  {dur:0.65, rpe:5.0, label:'Light'},
+  {dur:0.80, rpe:5.5, label:'Light-Moderate'},
+  {dur:0.95, rpe:6.0, label:'Moderate'},
+  {dur:1.10, rpe:6.5, label:'Moderate+'},
+  {dur:1.30, rpe:7.0, label:'Somewhat Hard'},
+  {dur:1.55, rpe:7.5, label:'Hard'},
+  {dur:1.85, rpe:8.0, label:'Very Hard'},
+  {dur:2.25, rpe:8.5, label:'Very Hard+'},
+  {dur:2.80, rpe:9.0, label:'Near Max'},
+  {dur:3.80, rpe:9.5, label:'Almost Max'},
+  {dur:5.00, rpe:10,  label:'Max / Fail'},
 ];
 
-function lookupRPE(loss) {
-  const t=RPE_TABLE;
-  if(loss<=t[0].loss) return t[0];
-  if(loss>=t[t.length-1].loss) return t[t.length-1];
+function lookupRPE(dur){
+  const t=RPE_TIME_TABLE;
+  if(dur<=t[0].dur) return {rpe:t[0].rpe,label:t[0].label};
+  if(dur>=t[t.length-1].dur) return {rpe:t[t.length-1].rpe,label:t[t.length-1].label};
   for(let i=1;i<t.length;i++){
-    if(loss<=t[i].loss){
-      const r=(loss-t[i-1].loss)/(t[i].loss-t[i-1].loss);
-      return {rpe:+(t[i-1].rpe+r*(t[i].rpe-t[i-1].rpe)).toFixed(1),label:t[i-1].label};
+    if(dur<=t[i].dur){
+      const f=(dur-t[i-1].dur)/(t[i].dur-t[i-1].dur);
+      return {rpe:+(t[i-1].rpe+f*(t[i].rpe-t[i-1].rpe)).toFixed(1),label:t[i-1].label};
     }
   }
   return t[t.length-1];
 }
 
-// ── EMA smoother ──────────────────────────────────────────
-class EMA {
-  constructor(a=0.3){this.a=a;this.v=null;}
+// ── EMA ───────────────────────────────────────────────────
+class EMA{constructor(a=0.3){this.a=a;this.v=null;}
   update(x){this.v=this.v===null?x:this.a*x+(1-this.a)*this.v;return this.v;}
-  reset(){this.v=null;}
-}
+  reset(){this.v=null;}}
 
-// ── Squat Tracker (generalized) ──────────────────────────
-const Phase = Object.freeze({WAITING:'WAITING',DESCENDING:'DESCENDING',BOTTOM:'BOTTOM',ASCENDING:'ASCENDING'});
+// ── RepTracker ────────────────────────────────────────────
+const Phase=Object.freeze({WAITING:'WAITING',DESCENDING:'DESCENDING',BOTTOM:'BOTTOM',ASCENDING:'ASCENDING'});
 
-class RepTracker {
+class RepTracker{
   constructor(onRep){
-    this.onRep=onRep;
-    this.repHistory=[];
-    this._ema=new EMA(0.3);
-    this._velEMA=new EMA(0.25);
+    this.onRep=onRep; this.repHistory=[];
+    this._ema=new EMA(0.3); this._velEMA=new EMA(0.2);
     this._reset();
   }
 
-  update(lm, exKey, now=performance.now()){
-    if(!lm||lm.length<29) return null;
-    const cfg=EX_CONFIG[exKey];
-    if(!cfg) return null;
+  // poseLm: pose landmarks array | null
+  // handLms: array of hand landmark arrays (each hand) | []
+  update(poseLm, handLms, exKey, now=performance.now()){
+    const cfg=EX_CONFIG[exKey]; if(!cfg) return null;
+    const primary=cfg.trackGroups[0];
 
-    // Get tracked point position (average if multiple landmarks)
-    const coords=cfg.landmarks.map(i=>lm[i]).filter(Boolean);
-    if(!coords.length) return null;
+    // Resolve primary tracking point Y
+    const primaryY=this._resolveY(primary, poseLm, handLms);
+    if(primaryY===null) return null;
 
-    // Check visibility
-    const minVis=0.4;
-    if(coords.some(c=>(c.visibility??1)<minVis)) return null;
-
-    const rawY=coords.reduce((s,c)=>s+c.y,0)/coords.length;
-    const rawX=coords.reduce((s,c)=>s+c.x,0)/coords.length;
-    const smoothY=this._ema.update(rawY);
-
-    // Velocity: positive = moving DOWN in image coords
+    const smoothY=this._ema.update(primaryY);
     let vel=0;
     if(this._prev){
       const dt=(now-this._prev.now)||1;
       vel=this._velEMA.update((smoothY-this._prev.y)/dt);
     }
 
-    // For concentric='up': ascending = vel < 0 (y decreasing)
-    // For concentric='down': ascending = vel > 0
-    const isDescending = cfg.concentric==='up' ? vel>0.00015 : vel<-0.00015;
-    const isAscending  = cfg.concentric==='up' ? vel<-0.00015 : vel>0.00015;
+    const isDescending=vel>0.00012;
+    const isAscending=vel<-0.00012;
 
     this._fsm({y:smoothY,vel,isDescending,isAscending,now});
     this._prev={y:smoothY,now};
 
-    return {
-      phase:this._phase,
-      trackedY:smoothY,trackedX:rawX,
-      vel,repCount:this.repHistory.length,
-      setMean:+this._setMean.toFixed(3),
+    // Resolve all group positions for overlay rendering
+    const groupPositions=cfg.trackGroups.map(g=>({
+      ...g,
+      pts: this._resolvePoints(g, poseLm, handLms),
+    }));
+
+    return {phase:this._phase,vel,repCount:this.repHistory.length,
       lastRep:this.repHistory[this.repHistory.length-1]??null,
-    };
+      groupPositions};
+  }
+
+  _resolveY(group, poseLm, handLms){
+    const pts=this._resolvePoints(group, poseLm, handLms);
+    if(!pts.length) return null;
+    return pts.reduce((s,p)=>s+p.y,0)/pts.length;
+  }
+
+  _resolvePoints(group, poseLm, handLms){
+    if(group.source==='pose'){
+      if(!poseLm||poseLm.length<25) return [];
+      const coords=group.indices.map(i=>poseLm[i]).filter(Boolean);
+      if(coords.some(c=>(c.visibility??1)<0.35)) return [];
+      return coords;
+    } else {
+      // hand: use the hand closest to the center, or average both hands
+      // Hand landmark 0 = wrist, 9 = middle MCP (palm center)
+      if(!handLms||!handLms.length) return [];
+      // Average across detected hands
+      const allPts=[];
+      handLms.forEach(hand=>{
+        group.indices.forEach(i=>{
+          if(hand[i]) allPts.push(hand[i]);
+        });
+      });
+      return allPts;
+    }
   }
 
   resetSet(){
     this.repHistory=[];
-    this._ema.reset();
-    this._velEMA.reset();
-    this._reset();
+    this._ema.reset(); this._velEMA.reset(); this._reset();
   }
 
   _reset(){
-    this._phase=Phase.WAITING;this._prev=null;
-    this._bottomY=null;this._ascentStart=null;
-    this._lockout=0;this._descentFrames=0;this._setMean=0;
+    this._phase=Phase.WAITING; this._prev=null;
+    this._bottomY=null; this._ascentStart=null;
+    this._descentFrames=0; this._stillFrames=0;
   }
 
   _fsm({y,vel,isDescending,isAscending,now}){
     switch(this._phase){
       case Phase.WAITING:
-        if(isDescending){
-          this._descentFrames++;
-          if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0;}
-        } else this._descentFrames=Math.max(0,this._descentFrames-1);
+        if(isDescending){this._descentFrames++;if(this._descentFrames>=4){this._phase=Phase.DESCENDING;this._descentFrames=0;}}
+        else this._descentFrames=Math.max(0,this._descentFrames-1);
         break;
-
       case Phase.DESCENDING:
-        // Track extreme point
         if(this._bottomY===null) this._bottomY=y;
-        if(EX_CONFIG[currentExercise].concentric==='up') {
-          if(y>this._bottomY) this._bottomY=y; // deeper down
-        } else {
-          if(y<this._bottomY) this._bottomY=y;
-        }
-        // Transition to bottom when velocity reverses
-        if(isAscending){
-          this._phase=Phase.BOTTOM;
-        }
-        // False start guard
-        if(isAscending&&Math.abs(vel)<0.0001){
-          this._descentFrames++;
-          if(this._descentFrames>=5){this._phase=Phase.WAITING;this._descentFrames=0;}
-        }
+        if(y>this._bottomY) this._bottomY=y;
+        if(isAscending){this._phase=Phase.BOTTOM;}
         break;
-
       case Phase.BOTTOM:
-        if(isAscending){
-          this._phase=Phase.ASCENDING;
-          this._ascentStart=now;
-          this._lockout=0;
-        }
+        if(isAscending){this._phase=Phase.ASCENDING;this._ascentStart=now;this._stillFrames=0;}
         break;
-
-      case Phase.ASCENDING:
-        if(isAscending||Math.abs(vel)<0.0003){
-          this._lockout++;
-        } else {
-          this._lockout=0;
+      case Phase.ASCENDING:{
+        const velAbs=Math.abs(vel);
+        if(velAbs<0.0004) this._stillFrames++; else this._stillFrames=0;
+        const dur=(now-this._ascentStart)/1000;
+        if(this._stillFrames>=8||(isDescending&&dur>0.3)){
+          if(dur>=0.3&&dur<=12) this._completeRep(dur,now);
+          this._phase=Phase.WAITING; this._bottomY=null; this._stillFrames=0;
         }
-        if(this._lockout>=6 && Math.abs(vel)<0.0005){
-          const dur=(now-this._ascentStart)/1000;
-          if(dur>=0.15&&dur<=10) this._completeRep(dur,now);
-          this._phase=Phase.WAITING;
-          this._lockout=0;this._bottomY=null;
-        }
-        break;
+        break;}
     }
   }
 
   _completeRep(dur,now){
     const n=this.repHistory.length+1;
-    const prevMean=this._setMean;
-    this._setMean=prevMean+(1/n)*(dur-prevMean);
-    const lossPercent=n===1?0:Math.max(0,((dur-prevMean)/prevMean)*100);
-    const {rpe,label}=lookupRPE(lossPercent);
-    const rep={repNumber:n,concentricDuration:+dur.toFixed(3),
-      velocityLoss:+lossPercent.toFixed(1),rpe,rpeLabel:label,timestamp:now};
+    const {rpe,label}=lookupRPE(dur);
+    const rep={repNumber:n,concentricDuration:+dur.toFixed(3),rpe,rpeLabel:label,timestamp:now};
     this.repHistory.push(rep);
     this.onRep?.(rep,[...this.repHistory]);
   }
 }
 
 // ── State ─────────────────────────────────────────────────
-let poseLandmarker=null, drawingUtils=null, stream=null;
+let poseLandmarker=null, handLandmarker=null, drawingUtils=null, stream=null;
 let tracking=false, rafId=null, lastVideoTime=-1;
 let facingMode='environment';
 let currentExercise='SQ';
 let weightKg=null, weightUnit='kg';
 let countingDown=false;
-let setHistory=[];
-let setNumber=0;
+let setHistory=[], setNumber=0;
+let autoRecord=false, useWakeLock=true, useAutoStop=true, autoStopSec=4;
+let wakeLockSentinel=null;
+let mediaRecorder=null, recordedChunks=[], isRecording=false, camOn=true;
+let liveRpe=null, liveRepNum=0;
+
+// Auto-stop state
+let lastMovementTime=performance.now();
+let autoStopWarning=false;
+let autoStopRafId=null;
 
 const tracker=new RepTracker((rep,history)=>{
+  liveRpe=rep.rpe; liveRepNum=rep.repNumber;
+  lastMovementTime=performance.now(); // reset idle timer on rep
   updateMetrics(rep,history);
   addRepRow(rep);
   showToast(`Rep ${rep.repNumber} ✓  ${rep.concentricDuration}s — RPE ${rep.rpe}`);
@@ -559,47 +583,68 @@ const tracker=new RepTracker((rep,history)=>{
 // ── DOM ───────────────────────────────────────────────────
 const $=s=>document.querySelector(s);
 const video=$('#video'), canvas=$('#overlay'), ctx=canvas.getContext('2d');
+const recCanvas=$('#rec-canvas'), recCtx=recCanvas.getContext('2d');
 const loadScreen=$('#loading-screen'), loadStatus=$('#load-status');
-const phaseBadge=$('#phase-badge'), trackLabel=$('#track-point-label');
-const mReps=$('#m-reps'), mTime=$('#m-time'), mVloss=$('#m-vloss'), mMean=$('#m-mean');
-const rpeVal=$('#rpe-val'), rpeDesc=$('#rpe-desc'), rpeFill=$('#rpe-fill');
-const repTbody=$('#rep-tbody'), setsTbody=$('#sets-tbody');
-const btnStart=$('#btn-start'), btnReset=$('#btn-reset');
-const countdownOverlay=$('#countdown-overlay'), countdownNum=$('#countdown-num');
+const phaseBadge=$('#phase-badge');
+const trackChipsEl=$('#track-chips');
+const mReps=$('#m-reps'),mTime=$('#m-time'),mVloss=$('#m-vloss'),mMean=$('#m-mean');
+const rpeVal=$('#rpe-val'),rpeDesc=$('#rpe-desc'),rpeFill=$('#rpe-fill');
+const repTbody=$('#rep-tbody'),setsTbody=$('#sets-tbody');
+const btnStart=$('#btn-start'),btnReset=$('#btn-reset');
+const countdownOverlay=$('#countdown-overlay'),countdownNum=$('#countdown-num');
 const weightIn=$('#weight-in');
 const exSelect=$('#exercise-select');
+const analyzerOverlay=$('#analyzer-overlay');
+const btnCamOff=$('#btn-cam-off'), btnCamFlip=$('#btn-cam-flip');
+const camOffScreen=$('#cam-off-screen');
+const autostopRing=$('#autostop-ring'), autostopArc=$('#autostop-arc');
 
-// ── MediaPipe ─────────────────────────────────────────────
+// ── MediaPipe init ────────────────────────────────────────
 async function initMP(){
-  setStatus('Downloading model…');
+  setStatus('Downloading models…');
   try{
     const vision=await FilesetResolver.forVisionTasks(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm'
     );
-    setStatus('Initializing pose tracker…');
+
+    setStatus('Loading pose model…');
     poseLandmarker=await PoseLandmarker.createFromOptions(vision,{
       baseOptions:{
         modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
         delegate:'GPU',
       },
-      runningMode:'VIDEO',numPoses:1,
-      minPoseDetectionConfidence:0.55,
-      minPosePresenceConfidence:0.55,
-      minTrackingConfidence:0.55,
+      runningMode:'VIDEO', numPoses:1,
+      minPoseDetectionConfidence:0.5,
+      minPosePresenceConfidence:0.5,
+      minTrackingConfidence:0.5,
     });
+
+    setStatus('Loading hand model…');
+    handLandmarker=await HandLandmarker.createFromOptions(vision,{
+      baseOptions:{
+        modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate:'GPU',
+      },
+      runningMode:'VIDEO', numHands:2,
+      minHandDetectionConfidence:0.5,
+      minHandPresenceConfidence:0.5,
+      minTrackingConfidence:0.5,
+    });
+
     drawingUtils=new DrawingUtils(ctx);
     setStatus('Requesting camera…');
     await startCamera();
+    updateTrackChips();
     loadScreen.style.display='none';
   }catch(e){
-    setStatus('Error: '+e.message);console.error(e);
+    setStatus('Error: '+e.message); console.error(e);
   }
 }
 
 async function startCamera(){
   if(stream) stream.getTracks().forEach(t=>t.stop());
   stream=await navigator.mediaDevices.getUserMedia({
-    video:{facingMode,width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}},audio:false
+    video:{facingMode,width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false
   });
   video.srcObject=stream;
   video.style.transform=facingMode==='user'?'scaleX(-1)':'none';
@@ -608,9 +653,23 @@ async function startCamera(){
 }
 
 function resizeCanvas(){
-  canvas.width=video.videoWidth||video.clientWidth;
-  canvas.height=video.videoHeight||video.clientHeight;
-  canvas.style.width='100%';canvas.style.height='100%';
+  const w=video.videoWidth||video.clientWidth;
+  const h=video.videoHeight||video.clientHeight;
+  canvas.width=w; canvas.height=h;
+  canvas.style.width='100%'; canvas.style.height='100%';
+  recCanvas.width=w; recCanvas.height=h;
+}
+
+// ── Track chips UI ────────────────────────────────────────
+function updateTrackChips(){
+  const cfg=EX_CONFIG[currentExercise];
+  trackChipsEl.innerHTML='';
+  cfg.trackGroups.forEach((g,i)=>{
+    const el=document.createElement('div');
+    el.className='track-chip';
+    el.innerHTML=`<div class="tv" style="color:${g.color}">${g.label}</div><div class="tl">${i===0?'PRIMARY':'SECONDARY'}</div>`;
+    trackChipsEl.appendChild(el);
+  });
 }
 
 // ── Detection loop ────────────────────────────────────────
@@ -621,47 +680,104 @@ function detectLoop(){
   lastVideoTime=video.currentTime;
   resizeCanvas();
   const now=performance.now();
-  const result=poseLandmarker.detectForVideo(video,now);
-  const lm=result?.landmarks?.[0];
+
+  // Run pose detection
+  const poseResult=poseLandmarker.detectForVideo(video,now);
+  const poseLm=poseResult?.landmarks?.[0]??null;
+
+  // Run hand detection (only if exercise needs it)
+  const cfg=EX_CONFIG[currentExercise];
+  const needsHand=cfg.trackGroups.some(g=>g.source==='hand');
+  let handLms=[];
+  if(needsHand && handLandmarker){
+    const handResult=handLandmarker.detectForVideo(video,now);
+    handLms=handResult?.landmarks??[];
+  }
+
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  const W=canvas.width, H=canvas.height;
 
-  if(lm){
-    // Draw skeleton
-    drawingUtils.drawLandmarks(lm,{radius:3,color:'rgba(224,108,0,0.6)',fillColor:'rgba(224,108,0,0.2)',lineWidth:1});
-    drawingUtils.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{color:'rgba(255,255,255,0.15)',lineWidth:1.5});
+  // Draw pose skeleton lightly
+  if(poseLm){
+    drawingUtils.drawLandmarks(poseLm,{radius:2,color:'rgba(224,108,0,0.4)',fillColor:'rgba(224,108,0,0.1)',lineWidth:1});
+    drawingUtils.drawConnectors(poseLm,PoseLandmarker.POSE_CONNECTIONS,{color:'rgba(255,255,255,0.10)',lineWidth:1});
+  }
 
-    const live=tracker.update(lm,currentExercise,now);
-    if(live) renderOverlay(live,lm);
+  // Draw hand landmarks lightly
+  if(handLms.length && handLandmarker){
+    handLms.forEach(hand=>{
+      drawingUtils.drawLandmarks(hand,{radius:2,color:'rgba(0,229,200,0.4)',fillColor:'rgba(0,229,200,0.1)',lineWidth:1});
+      drawingUtils.drawConnectors(hand,HandLandmarker.HAND_CONNECTIONS,{color:'rgba(0,229,200,0.15)',lineWidth:1});
+    });
+  }
+
+  const live=tracker.update(poseLm, handLms, currentExercise, now);
+
+  if(live){
+    renderOverlay(live, W, H);
+    // track movement for auto-stop: if phase changes or rep happens
+    if(live.phase!==Phase.WAITING) lastMovementTime=now;
   } else {
     updatePhaseUI('WAITING');
   }
+
+  // Auto-stop check
+  if(useAutoStop && tracker.repHistory.length>0){
+    const idle=(now-lastMovementTime)/1000;
+    const pct=Math.min(1, idle/autoStopSec);
+    updateAutoStopRing(pct);
+    if(idle>=autoStopSec){
+      handleStopSet(true);
+      return;
+    }
+  } else {
+    updateAutoStopRing(0);
+  }
+
+  if(isRecording) drawRecordingOverlay(W,H);
+}
+
+// ── Auto-stop ring ────────────────────────────────────────
+function updateAutoStopRing(pct){
+  if(!useAutoStop || !tracking || tracker.repHistory.length===0){
+    autostopRing.classList.remove('visible');
+    return;
+  }
+  autostopRing.classList.add('visible');
+  const circ=94.2;
+  autostopArc.style.strokeDashoffset=circ-(pct*circ);
 }
 
 // ── Overlay ───────────────────────────────────────────────
-function renderOverlay(live,lm){
-  const W=canvas.width, H=canvas.height;
-  const cfg=EX_CONFIG[currentExercise];
-
-  // Draw tracked point(s) as highlighted dot
-  cfg.landmarks.forEach(idx=>{
-    const pt=lm[idx];if(!pt)return;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(pt.x*W,pt.y*H,10,0,Math.PI*2);
-    ctx.fillStyle=live.phase==='ASCENDING'?'rgba(0,229,200,0.8)':
-                  live.phase==='BOTTOM'?'rgba(224,108,0,0.9)':
-                  live.phase==='DESCENDING'?'rgba(255,193,7,0.8)':'rgba(255,255,255,0.4)';
-    ctx.fill();
-    ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
-    ctx.restore();
+function renderOverlay(live, W, H){
+  live.groupPositions.forEach(g=>{
+    g.pts.forEach(pt=>{
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pt.x*W, pt.y*H, 12, 0, Math.PI*2);
+      const baseColor=g.color;
+      // Primary group gets phase-based color
+      if(g===live.groupPositions[0]){
+        ctx.fillStyle=live.phase==='ASCENDING'?'rgba(0,229,200,0.85)':
+                      live.phase==='BOTTOM'?'rgba(224,108,0,0.9)':
+                      live.phase==='DESCENDING'?'rgba(255,193,7,0.8)':'rgba(255,255,255,0.3)';
+      } else {
+        // Secondary: always show in its color
+        ctx.fillStyle=baseColor+'88';
+      }
+      ctx.fill();
+      ctx.strokeStyle=g===live.groupPositions[0]?'#fff':baseColor;
+      ctx.lineWidth=2; ctx.stroke();
+      ctx.restore();
+    });
   });
 
-  // Velocity indicator bar (right side)
-  const barH=120, barW=8, barX=W-20, barY=(H-barH)/2;
+  // Velocity bar
+  const barH=100,barW=7,barX=W-18,barY=(H-barH)/2;
   const velNorm=Math.max(-1,Math.min(1,live.vel/0.002));
   ctx.save();
-  ctx.fillStyle='rgba(255,255,255,0.08)';
-  ctx.beginPath();roundRect(ctx,barX,barY,barW,barH,4);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.07)';
+  ctx.beginPath(); roundRect(ctx,barX,barY,barW,barH,3); ctx.fill();
   const midY=barY+barH/2;
   const fillH=Math.abs(velNorm)*barH/2;
   ctx.fillStyle=velNorm<0?'rgba(0,229,200,0.8)':'rgba(255,193,7,0.6)';
@@ -669,7 +785,30 @@ function renderOverlay(live,lm){
   ctx.restore();
 
   updatePhaseUI(live.phase);
-  trackLabel.textContent=cfg.track;
+}
+
+// ── Recording overlay ─────────────────────────────────────
+function drawRecordingOverlay(W,H){
+  const repCount=tracker.repHistory.length;
+  const avgRpe=repCount?(tracker.repHistory.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1):'—';
+  ctx.save();
+  ctx.font=`bold 16px 'Space Mono',monospace`;
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(8,8,150,50);
+  ctx.fillStyle='#e06c00';
+  ctx.fillText(`Reps: ${repCount}`,14,28);
+  ctx.fillStyle='#00e5c8';
+  ctx.fillText(`Avg RPE: ${avgRpe}`,14,48);
+  if(liveRpe!==null){
+    const rpeColor=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=6?'#e06c00':'#00e5c8';
+    const label=`Rep ${liveRepNum}  RPE ${liveRpe}`;
+    const tw=ctx.measureText(label).width;
+    ctx.fillStyle='rgba(0,0,0,0.6)';
+    ctx.fillRect(W-tw-22,8,tw+14,32);
+    ctx.fillStyle=rpeColor;
+    ctx.fillText(label,W-tw-15,28);
+  }
+  ctx.restore();
 }
 
 function roundRect(ctx,x,y,w,h,r){
@@ -692,10 +831,10 @@ function updatePhaseUI(phase){
 function updateMetrics(rep,history){
   mReps.textContent=rep.repNumber;
   mTime.textContent=rep.concentricDuration.toFixed(2);
-  mVloss.textContent=rep.velocityLoss.toFixed(1)+'%';
-  const mean=history.reduce((s,r)=>s+r.concentricDuration,0)/history.length;
-  mMean.textContent=mean.toFixed(2);
-  mVloss.className='metric-val '+(rep.velocityLoss>=25?'danger':rep.velocityLoss>=10?'':'teal');
+  const avgRpe=(history.reduce((s,r)=>s+r.rpe,0)/history.length).toFixed(1);
+  mVloss.textContent=avgRpe;
+  mVloss.className='metric-val '+(rep.rpe>=9?'danger':rep.rpe>=8?'':'teal');
+  mMean.textContent=(history.reduce((s,r)=>s+r.concentricDuration,0)/history.length).toFixed(2);
   const pct=Math.min(100,((rep.rpe-4)/6)*100);
   rpeFill.style.width=pct+'%';
   rpeFill.style.background=rep.rpe>=9?'#e05555':rep.rpe>=8?'#ffc107':'var(--acc)';
@@ -706,15 +845,15 @@ function updateMetrics(rep,history){
 function addRepRow(rep){
   const tr=document.createElement('tr');
   const cls=rep.rpe>=9?'rpe-high':rep.rpe>=8?'rpe-med':'rpe-ok';
-  tr.innerHTML=`<td>Rep ${rep.repNumber}</td><td>${rep.concentricDuration.toFixed(2)}</td><td>${rep.velocityLoss.toFixed(1)}%</td><td class="${cls}">${rep.rpe}</td>`;
+  tr.innerHTML=`<td>Rep ${rep.repNumber}</td><td>${rep.concentricDuration.toFixed(2)}</td><td class="${cls}">${rep.rpe}</td>`;
   repTbody.prepend(tr);
 }
 
 // ── Countdown ─────────────────────────────────────────────
 function startCountdown(){
-  if(countingDown)return;
-  countingDown=true;btnStart.disabled=true;
-  let n=4;
+  if(countingDown) return;
+  countingDown=true; btnStart.disabled=true;
+  let n=3;
   countdownNum.textContent=n;
   countdownOverlay.classList.add('visible');
   const tick=setInterval(()=>{
@@ -723,83 +862,165 @@ function startCountdown(){
     else{
       clearInterval(tick);
       countdownOverlay.classList.remove('visible');
-      countingDown=false;btnStart.disabled=false;
+      countingDown=false; btnStart.disabled=false;
       tracking=true;
-      btnStart.textContent='⏸ Stop Set';
+      lastMovementTime=performance.now();
+      btnStart.textContent='⏸ Stop';
+      btnStart.classList.add('stopping');
+      if(autoRecord&&stream&&!isRecording) startRecording();
       detectLoop();
     }
   },1000);
 }
 
+// ── Torch flash ─────────────────────────────────────────────
+async function flashTorch(times=3,onMs=200,offMs=150){
+  const track=stream?.getVideoTracks?.()?.[0];
+  if(!track) return;
+  const caps=track.getCapabilities?.()??{};
+  if(!caps.torch) return;
+  try{
+    for(let i=0;i<times;i++){
+      await track.applyConstraints({advanced:[{torch:true}]});
+      await new Promise(r=>setTimeout(r,onMs));
+      await track.applyConstraints({advanced:[{torch:false}]});
+      if(i<times-1) await new Promise(r=>setTimeout(r,offMs));
+    }
+  }catch(e){}
+}
+
+// ── Stop set ──────────────────────────────────────────────
+function handleStopSet(auto=false){
+  tracking=false; cancelAnimationFrame(rafId);
+  btnStart.textContent='▶ Start';
+  btnStart.classList.remove('stopping');
+  updatePhaseUI('WAITING');
+  updateAutoStopRing(0);
+  if(autoRecord&&isRecording) stopRecording();
+  if(auto) flashTorch(3,200,150);
+  if(tracker.repHistory.length>0){
+    setNumber++;
+    const history=tracker.repHistory;
+    const maxRpe=Math.max(...history.map(r=>r.rpe));
+    const avgDur=(history.reduce((s,r)=>s+r.concentricDuration,0)/history.length).toFixed(2);
+    setHistory.unshift({setNum:setNumber,exercise:EX_CONFIG[currentExercise].label,
+      reps:history.length,maxRpe,avgDur,weight:weightKg?`${weightKg}${weightUnit}`:''});
+    renderSetsTab();
+    showToast((auto?'⏱ Auto-stopped — ':'')+`Set ${setNumber} saved — ${history.length} reps, RPE ${maxRpe}`);
+  }
+  releaseWakeLock();
+}
+
+// ── Recording ─────────────────────────────────────────────
+function startRecording(){
+  if(!stream||isRecording) return;
+  recordedChunks=[]; liveRpe=null; liveRepNum=0;
+  let recStream;
+  try{recCanvas.width=canvas.width||640;recCanvas.height=canvas.height||480;recStream=recCanvas.captureStream(30);startCompositeLoop();}
+  catch(e){recStream=stream;}
+  const opts={mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'};
+  try{
+    mediaRecorder=new MediaRecorder(recStream,opts);
+    mediaRecorder.ondataavailable=e=>{if(e.data.size>0)recordedChunks.push(e.data);};
+    mediaRecorder.onstop=saveRecording;
+    mediaRecorder.start(100);
+    isRecording=true;
+    showToast('Recording…');
+  }catch(e){showToast('Recording not supported');}
+}
+
+let compositeRafId=null;
+function startCompositeLoop(){
+  if(compositeRafId) cancelAnimationFrame(compositeRafId);
+  function loop(){
+    if(!isRecording){compositeRafId=null;return;}
+    compositeRafId=requestAnimationFrame(loop);
+    const W=recCanvas.width,H=recCanvas.height;
+    recCtx.clearRect(0,0,W,H);
+    try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
+    try{recCtx.drawImage(canvas,0,0,W,H);}catch(e){}
+  }
+  loop();
+}
+
+function stopRecording(){
+  if(!isRecording) return;
+  mediaRecorder?.stop(); isRecording=false;
+  if(compositeRafId){cancelAnimationFrame(compositeRafId);compositeRafId=null;}
+}
+
+function saveRecording(){
+  const blob=new Blob(recordedChunks,{type:'video/webm'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='tatelift_'+EX_CONFIG[currentExercise].label+'_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.webm';
+  a.click(); URL.revokeObjectURL(url);
+  showToast('Video saved!');
+}
+
+// ── Wake Lock ─────────────────────────────────────────────
+async function requestWakeLock(){
+  if(!useWakeLock||!('wakeLock' in navigator)) return;
+  try{wakeLockSentinel=await navigator.wakeLock.request('screen');wakeLockSentinel.addEventListener('release',()=>wakeLockSentinel=null);}catch(e){}
+}
+async function releaseWakeLock(){
+  if(wakeLockSentinel){await wakeLockSentinel.release();wakeLockSentinel=null;}
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&useWakeLock) requestWakeLock();});
+
 // ── Controls ──────────────────────────────────────────────
 btnStart.addEventListener('click',()=>{
-  if(!poseLandmarker)return;
-  if(tracking){
-    tracking=false;cancelAnimationFrame(rafId);
-    btnStart.textContent='▶ Start Set';
-    // Save to set history
-    if(tracker.repHistory.length>0){
-      setNumber++;
-      const history=tracker.repHistory;
-      const maxRpe=Math.max(...history.map(r=>r.rpe));
-      const avgDur=(history.reduce((s,r)=>s+r.concentricDuration,0)/history.length).toFixed(2);
-      setHistory.unshift({setNum:setNumber,exercise:EX_CONFIG[currentExercise].label,
-        reps:history.length,maxRpe,avgDur,
-        weight:weightKg?`${weightKg}${weightUnit}`:''});
-      renderSetsTab();
-      showToast(`Set ${setNumber} saved — ${history.length} reps, RPE ${maxRpe}`);
-    }
-  } else {
-    startCountdown();
-  }
+  if(!poseLandmarker) return;
+  if(tracking){handleStopSet();}
+  else{if(!camOn) return; requestWakeLock(); startCountdown();}
 });
 
 btnReset.addEventListener('click',()=>{
-  tracking=false;cancelAnimationFrame(rafId);
-  tracker.resetSet();
+  tracking=false; cancelAnimationFrame(rafId);
+  if(isRecording) stopRecording();
+  tracker.resetSet(); liveRpe=null; liveRepNum=0;
   repTbody.innerHTML='';
-  mReps.textContent='0';mTime.textContent='—';mVloss.textContent='0%';mMean.textContent='—';
+  mReps.textContent='0';mTime.textContent='—';mVloss.textContent='—';mMean.textContent='—';
   rpeVal.textContent='—';rpeDesc.textContent='—';rpeFill.style.width='0%';
-  btnStart.textContent='▶ Start Set';
-  updatePhaseUI('WAITING');
+  btnStart.textContent='▶ Start'; btnStart.classList.remove('stopping');
+  updatePhaseUI('WAITING'); updateAutoStopRing(0); releaseWakeLock();
   showToast('Set reset');
 });
 
-$('#btn-cam-flip').addEventListener('click',async()=>{
+btnCamFlip.addEventListener('click',async()=>{
   facingMode=facingMode==='user'?'environment':'user';
   try{await startCamera();showToast(facingMode==='user'?'Front camera':'Rear camera');}
   catch{showToast('Camera flip failed');}
 });
-$('#cam-btn').addEventListener('click',async()=>{
-  facingMode=facingMode==='user'?'environment':'user';
-  try{await startCamera();}catch{}
+
+btnCamOff.addEventListener('click',()=>{
+  camOn=!camOn;
+  if(camOn){video.play();camOffScreen.classList.remove('visible');btnCamOff.classList.remove('off');canvas.style.display='';}
+  else{video.pause();camOffScreen.classList.add('visible');btnCamOff.classList.add('off');canvas.style.display='none';
+    if(tracking){tracking=false;cancelAnimationFrame(rafId);btnStart.textContent='▶ Start';btnStart.classList.remove('stopping');}}
 });
 
 exSelect.addEventListener('change',()=>{
   currentExercise=exSelect.value;
-  tracker.resetSet();
-  repTbody.innerHTML='';
-  trackLabel.textContent=EX_CONFIG[currentExercise].track;
-  showToast(EX_CONFIG[currentExercise].label+' — '+EX_CONFIG[currentExercise].description);
+  tracker.resetSet(); repTbody.innerHTML='';
+  updateTrackChips();
+  showToast(EX_CONFIG[currentExercise].label+' selected');
 });
 
 weightIn.addEventListener('input',()=>{
   const v=parseFloat(weightIn.value);
-  if(!isNaN(v)&&v>0){
-    weightKg=weightUnit==='kg'?v:+(v*0.453592).toFixed(1);
-  }else weightKg=null;
+  weightKg=(!isNaN(v)&&v>0)?(weightUnit==='kg'?v:+(v*0.453592).toFixed(1)):null;
 });
 
 document.querySelectorAll('.unit-seg-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
     document.querySelectorAll('.unit-seg-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    weightUnit=btn.dataset.unit;
+    btn.classList.add('active'); weightUnit=btn.dataset.unit;
     const v=parseFloat(weightIn.value);
     if(!isNaN(v)&&v>0){
       const c=weightUnit==='kg'?+(v*0.453592).toFixed(1):+(v*2.20462).toFixed(1);
-      weightIn.value=c;
-      weightKg=weightUnit==='kg'?c:+(c*0.453592).toFixed(1);
+      weightIn.value=c; weightKg=weightUnit==='kg'?c:+(c*0.453592).toFixed(1);
     }
     weightIn.placeholder=`Weight (${weightUnit})`;
   });
@@ -815,17 +1036,66 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   });
 });
 
+// ── Settings ──────────────────────────────────────────────
+$('#btn-settings').addEventListener('click',()=>{
+  $('#settings-drawer').classList.toggle('open');
+  $('#btn-settings').classList.toggle('active');
+});
+$('#settings-drawer').addEventListener('click',e=>{
+  if(e.target===$('#settings-drawer')){$('#settings-drawer').classList.remove('open');$('#btn-settings').classList.remove('active');}
+});
+$('#settings-close-btn').addEventListener('click',()=>{
+  $('#settings-drawer').classList.remove('open');$('#btn-settings').classList.remove('active');
+});
+$('#tog-record').addEventListener('change',e=>{autoRecord=e.target.checked;showToast(autoRecord?'Auto-record ON':'Auto-record OFF');});
+$('#tog-wakelock').addEventListener('change',e=>{useWakeLock=e.target.checked;if(useWakeLock)requestWakeLock();else releaseWakeLock();});
+$('#tog-autostop').addEventListener('change',e=>{useAutoStop=e.target.checked;showToast(useAutoStop?`Auto-stop ${autoStopSec}s ON`:'Auto-stop OFF');});
+$('#autostop-sec').addEventListener('change',e=>{autoStopSec=Math.max(2,Math.min(30,parseInt(e.target.value)||4));});
+
+// ── Set Analyzer ──────────────────────────────────────────
+function openAnalyzer(){
+  const h=tracker.repHistory;
+  const mean=h.length?h.reduce((s,r)=>s+r.concentricDuration,0)/h.length:0;
+  const maxRpe=h.length?Math.max(...h.map(r=>r.rpe)):0;
+  const avgRpe=h.length?(h.reduce((s,r)=>s+r.rpe,0)/h.length).toFixed(1):0;
+  const amEl=$('#analyzer-metrics');
+  if(amEl){
+    amEl.innerHTML=[
+      {v:h.length,l:'Reps',c:'var(--acc)'},
+      {v:mean?mean.toFixed(2):'—',l:'Avg (s)',c:'var(--text)'},
+      {v:maxRpe||'—',l:'Peak RPE',c:maxRpe>=9?'var(--danger)':maxRpe>=8?'#ffc107':'var(--text)'},
+      {v:avgRpe||'—',l:'Avg RPE',c:'var(--teal)'},
+    ].map(m=>`<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:10px 6px;text-align:center"><div style="font-family:var(--fm);font-size:22px;font-weight:700;color:${m.c}">${m.v}</div><div style="font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px">${m.l}</div></div>`).join('');
+  }
+  const arEl=$('#analyzer-reps');
+  if(arEl){
+    arEl.innerHTML=[...h].reverse().map(r=>{
+      const cls=r.rpe>=9?'rpe-high':r.rpe>=8?'rpe-med':'rpe-ok';
+      return `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Rep ${r.repNumber}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${r.concentricDuration.toFixed(3)}s</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="${cls}">${r.rpe}</td></tr>`;
+    }).join('');
+  }
+  const asEl=$('#analyzer-sets');
+  if(asEl){
+    asEl.innerHTML=setHistory.map(s=>{
+      const cls=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
+      return `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">${s.setNum}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border)">${s.exercise}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${s.reps}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="${cls}">${s.maxRpe}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${s.weight}</td></tr>`;
+    }).join('');
+  }
+  analyzerOverlay.classList.add('open');
+}
+
+$('#btn-expand').addEventListener('click',openAnalyzer);
+$('#analyzer-close').addEventListener('click',()=>analyzerOverlay.classList.remove('open'));
+
 function renderSetsTab(){
   setsTbody.innerHTML='';
   setHistory.forEach(s=>{
     const tr=document.createElement('tr');
     const cls=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
-    tr.innerHTML=`<td>Set ${s.setNum}</td><td>${s.exercise}</td><td>${s.reps}</td><td class="${cls}">${s.maxRpe}</td><td>${s.weight||'—'}</td>`;
+    tr.innerHTML=`<td>${s.setNum}</td><td>${s.exercise}</td><td>${s.reps}</td><td class="${cls}">${s.maxRpe}</td><td>${s.weight||'—'}</td>`;
     setsTbody.appendChild(tr);
   });
 }
-
-window.addEventListener('resize',resizeCanvas);
 
 // ── Toast ─────────────────────────────────────────────────
 let toastT;
@@ -835,112 +1105,11 @@ function showToast(msg){
 }
 function setStatus(msg){loadStatus.textContent=msg;}
 
-// ── Record ───────────────────────────────────────────────
-let mediaRecorder=null,recordedChunks=[],isRecording=false,camOn=true;
-const btnRecord=$('#btn-record');
-const btnCamOff=$('#btn-cam-off');
-const camOffScreen=$('#cam-off-screen');
-
-btnRecord.addEventListener('click',()=>{
-  if(!stream)return;
-  if(!isRecording){
-    recordedChunks=[];
-    const opts={mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'};
-    try{
-      mediaRecorder=new MediaRecorder(stream,opts);
-      mediaRecorder.ondataavailable=e=>{if(e.data.size>0)recordedChunks.push(e.data);};
-      mediaRecorder.onstop=()=>{
-        const blob=new Blob(recordedChunks,{type:'video/webm'});
-        const url=URL.createObjectURL(blob);
-        const a=document.createElement('a');
-        a.href=url;
-        a.download='tatelift_'+EX_CONFIG[currentExercise].label+'_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.webm';
-        a.click();URL.revokeObjectURL(url);
-        showToast('Video saved to Downloads!');
-      };
-      mediaRecorder.start();
-      isRecording=true;
-      btnRecord.classList.add('recording');
-      btnRecord.textContent='⏹';
-      showToast('Recording…');
-    }catch(e){showToast('Recording not supported on this browser');}
-  }else{
-    mediaRecorder?.stop();
-    isRecording=false;
-    btnRecord.classList.remove('recording');
-    btnRecord.textContent='⏺';
-  }
-});
-
-btnCamOff.addEventListener('click',()=>{
-  camOn=!camOn;
-  if(camOn){
-    video.play();
-    camOffScreen.classList.remove('visible');
-    btnCamOff.classList.remove('off');
-    canvas.style.display='';
-  }else{
-    video.pause();
-    camOffScreen.classList.add('visible');
-    btnCamOff.classList.add('off');
-    canvas.style.display='none';
-    if(tracking){tracking=false;cancelAnimationFrame(rafId);btnStart.textContent='▶ Start Set';}
-  }
-});
-
-// ── Set Analyzer Fullscreen ───────────────────────────────
-const analyzerOverlay=$('#analyzer-overlay');
-
-function openAnalyzer(){
-  const history=tracker.repHistory;
-  const mean=history.length?history.reduce((s,r)=>s+r.concentricDuration,0)/history.length:0;
-  const maxRpe=history.length?Math.max(...history.map(r=>r.rpe)):0;
-  const lastVloss=history.length?history[history.length-1].velocityLoss:0;
-  const amEl=$('#analyzer-metrics');
-  if(amEl){
-    amEl.innerHTML=[
-      {v:history.length,l:'Reps',c:'var(--acc)'},
-      {v:mean?mean.toFixed(2):'—',l:'Avg (s)',c:'var(--text)'},
-      {v:maxRpe||'—',l:'Peak RPE',c:maxRpe>=9?'var(--danger)':'var(--text)'},
-      {v:lastVloss?lastVloss.toFixed(1)+'%':'—',l:'V-Loss',c:'var(--teal)'},
-    ].map(m=>'<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:10px 6px;text-align:center">'
-      +'<div style="font-family:var(--fm);font-size:22px;font-weight:700;color:'+m.c+'">'+m.v+'</div>'
-      +'<div style="font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px">'+m.l+'</div>'
-      +'</div>').join('');
-  }
-  const arEl=$('#analyzer-reps');
-  if(arEl){
-    arEl.innerHTML=[...history].reverse().map(r=>{
-      const cls=r.rpe>=9?'rpe-high':r.rpe>=8?'rpe-med':'rpe-ok';
-      return '<tr>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Rep '+r.repNumber+'</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+r.concentricDuration.toFixed(3)+'s</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+r.velocityLoss.toFixed(1)+'%</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="'+cls+'">'+r.rpe+'</td>'
-        +'</tr>';
-    }).join('');
-  }
-  const asEl=$('#analyzer-sets');
-  if(asEl){
-    asEl.innerHTML=setHistory.map(s=>{
-      const cls=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
-      return '<tr>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Set '+s.setNum+'</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border)">'+s.exercise+'</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+s.reps+'</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="'+cls+'">'+s.maxRpe+'</td>'
-        +'<td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">'+s.weight+'</td>'
-        +'</tr>';
-    }).join('');
-  }
-  analyzerOverlay.classList.add('open');
-}
-
-$('#btn-expand').addEventListener('click',openAnalyzer);
-$('#analyzer-close').addEventListener('click',()=>analyzerOverlay.classList.remove('open'));
+window.addEventListener('resize',resizeCanvas);
 
 // ── Boot ──────────────────────────────────────────────────
 initMP();
+requestWakeLock();
 </script>
 </body>
 </html>
