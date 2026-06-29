@@ -6,6 +6,8 @@
 <meta name="theme-color" content="#0d0d0d"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <title>TATELIFT — RPE Tracker</title>
+<!-- Enable SharedArrayBuffer on GitHub Pages for FFmpeg.wasm -->
+<script src="https://unpkg.com/coi-serviceworker@0.1.7/coi-serviceworker.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -416,19 +418,19 @@ const EX_CONFIG = {
 
 // ── RPE table: concentric duration → RPE ─────────────────
 const RPE_TIME_TABLE = [
-  {dur:0.45, rpe:4.0, label:'Warm-up'},
-  {dur:0.55, rpe:4.5, label:'Very Light'},
-  {dur:0.65, rpe:5.0, label:'Light'},
-  {dur:0.80, rpe:5.5, label:'Light-Moderate'},
-  {dur:0.95, rpe:6.0, label:'Moderate'},
-  {dur:1.10, rpe:6.5, label:'Moderate+'},
-  {dur:1.30, rpe:7.0, label:'Somewhat Hard'},
-  {dur:1.55, rpe:7.5, label:'Hard'},
-  {dur:1.85, rpe:8.0, label:'Very Hard'},
-  {dur:2.25, rpe:8.5, label:'Very Hard+'},
-  {dur:2.80, rpe:9.0, label:'Near Max'},
-  {dur:3.80, rpe:9.5, label:'Almost Max'},
-  {dur:5.00, rpe:10,  label:'Max / Fail'},
+  {dur:0.60, rpe:4.0, label:'Warm-up'},
+  {dur:0.80, rpe:4.5, label:'Very Light'},
+  {dur:1.00, rpe:5.0, label:'Light'},
+  {dur:1.30, rpe:5.5, label:'Light-Moderate'},
+  {dur:1.70, rpe:6.0, label:'Moderate'},
+  {dur:2.10, rpe:6.5, label:'Moderate+'},
+  {dur:2.60, rpe:7.0, label:'Somewhat Hard'},
+  {dur:3.10, rpe:7.5, label:'Hard'},
+  {dur:3.80, rpe:8.0, label:'Very Hard'},
+  {dur:4.60, rpe:8.5, label:'Very Hard+'},
+  {dur:5.80, rpe:9.0, label:'Near Max'},
+  {dur:7.50, rpe:9.5, label:'Almost Max'},
+  {dur:10.0, rpe:10,  label:'Max / Fail'},
 ];
 
 function lookupRPE(dur){
@@ -614,7 +616,9 @@ let autoStopRafId=null;
 
 const tracker=new RepTracker((rep,history)=>{
   liveRpe=rep.rpe; liveRepNum=rep.repNumber;
-  lastMovementTime=performance.now(); // reset idle timer on rep
+  lastMovementTime=performance.now();
+  // Log for video overlay
+  if(isRecording) repLog.push({time:(performance.now()-recStartTime)/1000, repNum:rep.repNumber, rpe:rep.rpe});
   updateMetrics(rep,history);
   addRepRow(rep);
   showToast(`Rep ${rep.repNumber} ✓  ${rep.concentricDuration}s — RPE ${rep.rpe}`);
@@ -684,7 +688,7 @@ async function initMP(){
 async function startCamera(){
   if(stream) stream.getTracks().forEach(t=>t.stop());
   stream=await navigator.mediaDevices.getUserMedia({
-    video:{facingMode,width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false
+    video:{facingMode,width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},audio:false
   });
   video.srcObject=stream;
   video.style.transform=facingMode==='user'?'scaleX(-1)':'none';
@@ -989,48 +993,68 @@ function handleStopSet(auto=false){
 }
 
 // ── Recording ────────────────────────────────────────────────
-// Rules:
-// 1. Use the SINGLE preview stream — no second getUserMedia call
-// 2. Never touch video.srcObject during recording
-// 3. Save as .mp4 extension (webm container, avc1 or vp8 codec)
-
 const camControls=document.getElementById('cam-controls');
 
-function getRecMime(){
-  // Android Chrome supports webm/vp8 most reliably
-  const order=[
-    'video/webm;codecs=vp8',
-    'video/webm;codecs=vp9',
-    'video/webm',
-  ];
-  for(const m of order){
-    try{ if(MediaRecorder.isTypeSupported(m)) return m; }catch(e){}
+// FFmpeg lazy-load
+let _ffmpeg=null;
+let _ffmpegLoading=false;
+let _ffmpegReady=false;
+
+async function loadFFmpeg(){
+  if(_ffmpegReady) return true;
+  if(_ffmpegLoading) return false;
+  _ffmpegLoading=true;
+  try{
+    const {FFmpeg}=await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
+    const {fetchFile,toBlobURL}=await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js');
+    _ffmpeg=new FFmpeg();
+    const baseURL='https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    await _ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`,'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`,'application/wasm'),
+    });
+    window._ffetchFile=fetchFile;
+    _ffmpegReady=true;
+    return true;
+  }catch(e){
+    console.error('FFmpeg load failed:',e);
+    _ffmpegLoading=false;
+    return false;
   }
+}
+
+// Rep event log: {time, repNum, rpe} — time = seconds since recStart
+const repLog=[];
+let recStartTime=0;
+
+function getRecMime(){
+  const order=['video/webm;codecs=vp8','video/webm;codecs=vp9','video/webm'];
+  for(const m of order){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}
   return '';
 }
 
 function startRecording(){
   if(!stream||isRecording) return;
   recordedChunks=[];
+  repLog.length=0;
+  recStartTime=performance.now();
 
-  // Use the existing preview stream directly — do NOT open a second camera
   const mime=getRecMime();
   let mr;
-  try{
-    mr=new MediaRecorder(stream, mime?{mimeType:mime}:{});
-  }catch(e){
-    try{ mr=new MediaRecorder(stream); }
-    catch(e2){ showToast('녹화 미지원'); return; }
-  }
+  try{ mr=new MediaRecorder(stream,mime?{mimeType:mime}:{}); }
+  catch(e){ try{ mr=new MediaRecorder(stream); }catch(e2){ showToast('녹화 미지원'); return; } }
 
   mr.ondataavailable=e=>{ if(e.data&&e.data.size>0) recordedChunks.push(e.data); };
-  mr.onstop=saveRecording;
+  mr.onstop=processRecording;
   mr.onerror=e=>{ showToast('Rec err'); isRecording=false; setRecUI(false); };
-  mr.start(100); // 100ms chunks — smallest possible, smoothest result
+  mr.start(); // no timeslice = seekable
   mediaRecorder=mr;
   isRecording=true;
   setRecUI(true);
   showToast('REC ●');
+
+  // Start preloading FFmpeg in background
+  loadFFmpeg();
 }
 
 let compositeRafId=null;
@@ -1049,29 +1073,95 @@ function stopRecording(){
   try{
     if(mediaRecorder.state==='recording'){
       mediaRecorder.requestData();
-      setTimeout(()=>{
-        try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){}
-      },300);
+      setTimeout(()=>{ try{ if(mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){} },300);
     }
-  }catch(e){
-    try{ mediaRecorder.stop(); }catch(e2){}
-  }
+  }catch(e){ try{ mediaRecorder.stop(); }catch(e2){} }
 }
 
-function saveRecording(){
+// Called when raw recording is done
+async function processRecording(){
   if(!recordedChunks.length){ showToast('No video data'); return; }
 
-  // Always save as .mp4 — most phones play it regardless of container
-  const mime=mediaRecorder?.mimeType||'video/webm';
-  const blob=new Blob(recordedChunks,{type:mime});
+  const rawMime=mediaRecorder?.mimeType||'video/webm';
+  const rawBlob=new Blob(recordedChunks,{type:rawMime});
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
-  const filename=`tatelift_${EX_CONFIG[currentExercise].label}_${ts}.mp4`;
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  const exLabel=EX_CONFIG[currentExercise].label.replace(/\s+/g,'_');
+  const filename=`tatelift_${exLabel}_${ts}.mp4`;
 
-  // Web Share API first (Android native gallery save)
+  // Try FFmpeg overlay
+  if(_ffmpegReady && repLog.length>0){
+    showToast('영상 처리 중…', 60000);
+    try{
+      const out=await burnOverlay(rawBlob, repLog, filename);
+      if(out){ doSave(out, filename); return; }
+    }catch(e){ console.error('FFmpeg overlay failed:',e); }
+  }
+
+  // Fallback: save raw
+  doSave(rawBlob, filename);
+}
+
+async function burnOverlay(rawBlob, log, filename){
+  const ff=_ffmpeg;
+  const fetchFile=window._ffetchFile;
+  if(!ff||!fetchFile) return null;
+
+  // Write input
+  await ff.writeFile('input.webm', await fetchFile(rawBlob));
+
+  // Build drawtext filter chain
+  // Left top: exercise name + avg RPE
+  const ex=EX_CONFIG[currentExercise].label;
+  const avgRpe=log.length?(log.reduce((s,r)=>s+r.rpe,0)/log.length).toFixed(1):'—';
+
+  const fontColor='white';
+  const boxColor='black@0.5';
+  const fs=36; // font size
+
+  // Static left-top text (whole video)
+  let filters=[
+    `drawtext=text='${ex}':fontsize=${fs}:fontcolor=${fontColor}:box=1:boxcolor=${boxColor}:boxborderw=8:x=20:y=20`,
+    `drawtext=text='Avg RPE\: ${avgRpe}':fontsize=${fs}:fontcolor=00e5c8:box=1:boxcolor=${boxColor}:boxborderw=8:x=20:y=${20+fs+10}`,
+  ];
+
+  // Dynamic right-top: rep number + RPE, each shown from its timestamp
+  log.forEach((r,i)=>{
+    const t=r.time.toFixed(2);
+    const nextT=i+1<log.length?log[i+1].time.toFixed(2):'9999';
+    const rpeCol=r.rpe>=9?'ff5555':r.rpe>=8?'ffc107':r.rpe>=7?'e06c00':'00e5c8';
+    filters.push(
+      `drawtext=text='Rep ${r.repNum}':fontsize=${fs}:fontcolor=${fontColor}:box=1:boxcolor=${boxColor}:boxborderw=8:x=w-text_w-20:y=20:enable='between(t,${t},${nextT})'`,
+      `drawtext=text='RPE ${r.rpe}':fontsize=${fs}:fontcolor=${rpeCol}:box=1:boxcolor=${boxColor}:boxborderw=8:x=w-text_w-20:y=${20+fs+10}:enable='between(t,${t},${nextT})'`
+    );
+  });
+
+  const vf=filters.join(',');
+
+  await ff.exec([
+    '-i','input.webm',
+    '-vf',vf,
+    '-c:v','libx264',
+    '-preset','ultrafast',
+    '-crf','28',
+    '-an', // no audio
+    '-movflags','+faststart',
+    'output.mp4'
+  ]);
+
+  const data=await ff.readFile('output.mp4');
+  await ff.deleteFile('input.webm');
+  await ff.deleteFile('output.mp4');
+
+  return new Blob([data.buffer],{type:'video/mp4'});
+}
+
+function doSave(blob, filename){
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  const mime=blob.type||'video/mp4';
+
   if(navigator.canShare){
     try{
-      const file=new File([blob],filename,{type:'video/mp4'});
+      const file=new File([blob],filename,{type:mime});
       if(navigator.canShare({files:[file]})){
         navigator.share({files:[file],title:'TATELIFT'})
           .then(()=>showToast('✓ 저장 완료'))
