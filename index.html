@@ -382,8 +382,8 @@ const EX_CONFIG = {
     label: 'Squat',
     concentric: 'up',
     trackGroups: [
-      { source:'pose', indices:[PL.NOSE],              label:'HEAD',  color:'#00e5c8' },
-      { source:'pose', indices:[PL.L_SHOULDER, PL.R_SHOULDER], label:'SHOULDER', color:'#e06c00' },
+      // Primary: HEAD + CHEST(hip) + SHOULDER — 셋 중 잡히는 거 평균
+      { source:'pose', indices:[PL.NOSE, PL.L_HIP, PL.R_HIP, PL.L_SHOULDER, PL.R_SHOULDER], label:'HEAD+BODY', color:'#00e5c8' },
     ],
   },
   BP: {
@@ -562,7 +562,7 @@ class RepTracker{
     const recent=b.slice(mid).reduce((s,e)=>s+e.y,0)/(b.length-mid);
     const older=b.slice(0,mid).reduce((s,e)=>s+e.y,0)/mid;
     const diff=recent-older;
-    const THRESH=0.006;
+    const THRESH=0.004;
     if(diff>THRESH) return 1;   // DOWN
     if(diff<-THRESH) return -1; // UP
     return 0;
