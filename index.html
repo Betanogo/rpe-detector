@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <title>TATELIFT — RPE Tracker</title>
 <script src="coi-serviceworker.min.js"></script>
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -336,7 +337,7 @@ const LM={NOSE:0,L_SHOULDER:11,R_SHOULDER:12,L_ELBOW:13,R_ELBOW:14,L_WRIST:15,R_
 // All pose-based, no hand model needed (simpler + more reliable)
 const EX={
   SQ: {label:'Squat',   lm:[LM.NOSE,LM.L_SHOULDER,LM.R_SHOULDER,LM.L_HIP,LM.R_HIP,LM.L_WRIST,LM.R_WRIST,LM.L_INDEX,LM.R_INDEX], trackName:'FULL BODY'},
-  BP: {label:'Bench',   lm:[LM.L_INDEX,LM.R_INDEX,LM.L_WRIST,LM.R_WRIST,LM.L_ELBOW,LM.R_ELBOW],                                   trackName:'HAND+ELB'},
+  BP: {label:'Bench',   lm:[LM.L_INDEX,LM.R_INDEX,LM.L_WRIST,LM.R_WRIST,LM.L_ELBOW,LM.R_ELBOW,LM.L_SHOULDER,LM.R_SHOULDER], trackName:'HAND+ELB+SHLD'},
   DL: {label:'Deadlift',lm:[LM.NOSE,LM.L_SHOULDER,LM.R_SHOULDER,LM.L_HIP,LM.R_HIP,LM.L_WRIST,LM.R_WRIST,LM.L_INDEX,LM.R_INDEX], trackName:'FULL BODY'},
   OHP:{label:'OHP',     lm:[LM.L_INDEX,LM.R_INDEX,LM.L_WRIST,LM.R_WRIST,LM.L_ELBOW,LM.R_ELBOW],                                   trackName:'HAND+ELB'},
   RDL:{label:'RDL',     lm:[LM.L_WRIST,LM.R_WRIST,LM.L_INDEX,LM.R_INDEX],                                                          trackName:'HAND'},
@@ -935,12 +936,47 @@ function stopRec(){
   }catch(e){try{mediaRecorder.stop();}catch(e2){}}
 }
 
-function saveRec(){
+async function saveRec(){
   if(!chunks.length){showToast('No video data');return;}
   const mime=mediaRecorder?.mimeType||'video/webm';
-  const blob=new Blob(chunks,{type:mime});
+  const webmBlob=new Blob(chunks,{type:mime});
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
-  const name=`tatelift_${EX[curEx].label}_${ts}.mp4`;
+  const exName=EX[curEx].label;
+
+  // Try FFmpeg webm→mp4 conversion
+  if(window.FFmpeg&&window.crossOriginIsolated){
+    showToast('MP4 변환 중…',30000);
+    try{
+      const {createFFmpeg,fetchFile}=FFmpeg;
+      const ff=createFFmpeg({log:false});
+      await ff.load();
+      ff.FS('writeFile','input.webm',await fetchFile(webmBlob));
+      await ff.run(
+        '-i','input.webm',
+        '-c:v','libx264',
+        '-preset','ultrafast',
+        '-crf','28',
+        '-an',
+        '-movflags','+faststart',
+        'output.mp4'
+      );
+      const data=ff.FS('readFile','output.mp4');
+      const mp4Blob=new Blob([data.buffer],{type:'video/mp4'});
+      _download(mp4Blob,`tatelift_${exName}_${ts}.mp4`);
+      showToast('✓ MP4 저장');
+      return;
+    }catch(e){
+      console.error('FFmpeg failed:',e);
+      showToast('변환 실패 — webm 저장');
+    }
+  }
+
+  // Fallback: save as webm with .mp4 name
+  _download(webmBlob,`tatelift_${exName}_${ts}.mp4`);
+  showToast('✓ 저장 시작');
+}
+
+function _download(blob,name){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url; a.download=name;
@@ -948,7 +984,6 @@ function saveRec(){
   document.body.appendChild(a);
   requestAnimationFrame(()=>{
     a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
-    showToast('✓ 저장 시작');
     setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},30000);
   });
 }
