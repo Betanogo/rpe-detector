@@ -123,6 +123,7 @@ table.t td:first-child{color:var(--text3);}
 .kv div{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 6px;text-align:center;}
 .kv b{display:block;font-family:var(--fm);font-size:18px;}
 .kv span{font-size:9px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;}
+.rep-bad td{text-decoration:line-through;opacity:.45}
 .ai-box{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6;color:var(--text);}
 .ai-box .muted{color:var(--text2);font-size:12px;}
 .ai-box ul{padding-left:18px;}
@@ -405,6 +406,65 @@ class PlateTracker{
   }
 }
 
+// ── Camera-shake compensation ────────────────────────────
+// Tracks textured background patches away from the plate; their median shift = camera motion,
+// which is subtracted from the plate height so a moving/handheld phone doesn't create fake reps.
+class BgStab{
+  constructor(){this.P=[];this.dx=0;this.dy=0;this.good=true;this.n=0;this.jerk=0;}
+  init(G,W,H,cx,cy,r){
+    this.W=W;this.H=H;this.P=[];this.dx=0;this.dy=0;this.good=true;this.jerk=0;
+    const hs=10,ps=hs*2,cand=[];
+    const band=Math.max(1.6*r,W*0.12);
+    for(let y=hs+4;y<H-hs-4;y+=Math.round(H/14))for(let x=hs+4;x<W-hs-4;x+=Math.round(W/10)){
+      if(Math.abs(x-cx)<band) continue;                              // bar column moves vertically
+      let m=0,m2=0,gx=0,gy=0;
+      for(let j=0;j<ps;j++)for(let i=0;i<ps;i++){const v=G[(y-hs+j)*W+x-hs+i];m+=v;m2+=v*v;
+        if(i)gx+=Math.abs(v-G[(y-hs+j)*W+x-hs+i-1]); if(j)gy+=Math.abs(v-G[(y-hs+j-1)*W+x-hs+i]);}
+      const n=ps*ps,va=m2/n-(m/n)*(m/n);
+      if(va<120||gx<n*2.5||gy<n*2.5) continue;                      // need texture in both directions
+      cand.push({x,y,q:Math.min(gx,gy)*(1+Math.abs(x-cx)/W)});
+    }
+    cand.sort((a,b)=>b.q-a.q);
+    for(const c of cand){
+      if(this.P.length>=10) break;
+      if(this.P.some(p=>Math.hypot(p.x0-c.x,p.y0-c.y)<W*0.12)) continue;
+      const T=new Float32Array(ps*ps);
+      for(let j=0;j<ps;j++)for(let i=0;i<ps;i++) T[j*ps+i]=G[(c.y-hs+j)*W+c.x-hs+i];
+      this.P.push({x0:c.x,y0:c.y,x:c.x,y:c.y,T,hs,ok:true});
+    }
+    this.n=this.P.length;
+  }
+  _ncc(G,p,cx,cy,sp){
+    const W=this.W,hs=p.hs,ps=hs*2,x0=Math.round(cx-hs),y0=Math.round(cy-hs);
+    if(x0<0||y0<0||x0+ps>W||y0+ps>this.H) return -2;
+    let sa=0,sb=0,saa=0,sbb=0,sab=0,n=0;
+    for(let j=0;j<ps;j+=sp){const row=(y0+j)*W+x0,tr=j*ps;for(let i=0;i<ps;i+=sp){const a=p.T[tr+i],b=G[row+i];sa+=a;sb+=b;saa+=a*a;sbb+=b*b;sab+=a*b;n++;}}
+    const va=saa-sa*sa/n,vb=sbb-sb*sb/n; if(va<=1e-6||vb<=1e-6) return -1;
+    return (sab-sa*sb/n)/Math.sqrt(va*vb);
+  }
+  track(G){
+    if(this.n<3){this.good=true;return;}                           // featureless background → no compensation
+    const R=Math.round(this.W*0.06),res=[];
+    for(const p of this.P){
+      const px=p.x0+this.dx,py=p.y0+this.dy; let best=-3,bx=px,by=py;
+      for(let dy=-R;dy<=R;dy+=2)for(let dx=-R;dx<=R;dx+=2){const v=this._ncc(G,p,px+dx,py+dy,2);if(v>best){best=v;bx=px+dx;by=py+dy;}}
+      let fb=best,fx=bx,fy=by;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const v=this._ncc(G,p,bx+dx,by+dy,1);if(v>fb){fb=v;fx=bx+dx;fy=by+dy;}}
+      p.ok=fb>0.6; p.x=fx;p.y=fy;
+      if(p.ok) res.push({dx:fx-p.x0,dy:fy-p.y0});
+    }
+    if(res.length<Math.max(3,Math.ceil(this.n*0.4))){this.good=false;return;}
+    const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s[s.length>>1];};
+    let mx=med(res.map(r=>r.dx)),my=med(res.map(r=>r.dy));
+    const inl=res.filter(r=>Math.abs(r.dx-mx)<3&&Math.abs(r.dy-my)<3);   // reject patches on moving people
+    if(inl.length<Math.max(3,res.length*0.5)){this.good=false;return;}
+    mx=inl.reduce((a,r)=>a+r.dx,0)/inl.length; my=inl.reduce((a,r)=>a+r.dy,0)/inl.length;
+    this.jerk=0.7*this.jerk+0.3*Math.hypot(mx-this.dx,my-this.dy);
+    this.dx=mx;this.dy=my;this.good=true;
+  }
+}
+const stab=new BgStab();
+
 // Estimate plate radius from tap point: find the most consistent circular edge across rays
 function estimateRadius(G,W,H,cx,cy){
   const maxR=Math.floor(Math.min(W,H)*0.33), N=36, bins=new Float32Array(maxR+4);
@@ -563,6 +623,7 @@ let stream=null,facingMode='environment',camOn=true;
 let curLift='BP',weightKg=null,weightUnit='kg';
 const tracker=new PlateTracker();
 let seg=null,active=false,counting=false,t0=0,y0=0,lastT=0,lastRepWall=0,lastMoveWall=0;
+let shakeWarned=0;
 let trail=[];       // recent positions (work px) for bar path
 let setHistory=store.get('sets',[]),setNum=setHistory.length?Math.max(...setHistory.map(s=>s.n)):0;
 let curSetData=null;
@@ -617,11 +678,13 @@ function loop(now,meta){
   let res=null;
   if(tracker.ok){
     res=tracker.track(G);
+    stab.track(G);
+    if(res&&!stab.good) res={...res,lost:true,shake:true};   // camera moving too much → don't trust this frame
     if(res&&!res.lost){trail.push({x:res.x,y:res.y,t});}
     while(trail.length&&t-trail[0].t>3) trail.shift();
   }
   if(active&&seg&&res){
-    const ym=-(res.y-y0)*metersPerPx();
+    const ym=-((res.y-stab.dy)-y0)*metersPerPx();
     seg.push(t-t0,ym,res.x,!res.lost);
     const i=seg.T.length-1;
     const ph=seg.phase(i);
@@ -629,6 +692,7 @@ function loop(now,meta){
     const v=seg.vel(Math.max(0,i-2));
     if(Math.abs(v)>0.08) lastMoveWall=performance.now();
     checkAutoStop(v);
+    if((stab.jerk>1.5||!stab.good)&&performance.now()-shakeWarned>4000){shakeWarned=performance.now();toast('카메라가 흔들려요 — 폰을 고정해 주세요');}
     captureFrame(t-t0);
   }
   drawOverlay(res);
@@ -675,7 +739,9 @@ function drawDebug(res){
     'y     '+(i>=0?(seg.Y[i]*100).toFixed(1)+'cm':'—'),
     'v     '+(i>2?seg.vel(i-2).toFixed(2)+'m/s':'—'),
     'dir   '+(seg?seg.dir:'—')+'  ext '+(seg?seg.ext.length:0),
+    'cam   '+(stab.n>=3?`${stab.dx.toFixed(1)},${stab.dy.toFixed(1)}px ${stab.good?'ok':'SHAKE'} (${stab.P.filter(p=>p.ok).length}/${stab.n})`:'no bg'),
   ].join('\n');
+  if(WW&&stab.n){const k=overlay.width/WW;octx.lineWidth=1.5;stab.P.forEach(p=>{octx.strokeStyle=p.ok?'rgba(255,193,7,.8)':'rgba(224,85,85,.8)';octx.strokeRect((p.x-p.hs)*k,(p.y-p.hs)*k,p.hs*2*k,p.hs*2*k);});}
 }
 
 // ── UI helpers ───────────────────────────────────────────
@@ -742,7 +808,7 @@ function startCountdown(){
 }
 function beginSet(){
   seg=new RepSeg(curLift,onRep);
-  t0=lastT; y0=tracker.cy; frames.length=0;
+  t0=lastT; y0=tracker.cy-stab.dy; frames.length=0; shakeWarned=0;
   active=true; lastRepWall=lastMoveWall=performance.now();
   $('#btn-start').textContent='⏸ Stop'; $('#btn-start').classList.add('stopping');
   updateTargetUI(); renderReps();
@@ -807,6 +873,7 @@ function openResult(d){
   const tb=$('#res-reps-body'); tb.innerHTML='';
   reps.forEach(r=>{
     const tr=document.createElement('tr');
+    tr.dataset.n=r.n;
     tr.innerHTML=`<td>${r.n}${r.grind?' ⚠':''}</td><td>${r.mcv.toFixed(2)}</td><td>${r.tDown!=null?r.tDown.toFixed(1):'—'}</td><td>${r.tPause!=null?r.tPause.toFixed(1):'—'}</td><td>${r.tUp.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
     tb.appendChild(tr);
   });
@@ -852,16 +919,15 @@ function frameNear(t){let best=null,bd=1e9;frames.forEach(f=>{const d=Math.abs(f
 // ── AI review via Cloudflare Worker ──────────────────────
 async function runAI(d){
   const {entry,reps,seg:s}=d;
-  // key frames: first rep start, hardest rep bottom / sticking / lockout, last frame
+  // key frames: bottom + lockout of every rep (so Claude can reject reps that never happened),
+  // plus the hardest rep's mid-ascent and the moment before the first rep
   const hard=reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a);
   const picks=[];
-  const add=(t,label)=>{const f=frameNear(t);if(f&&!picks.some(p=>p.f===f))picks.push({f,label});};
-  add(reps[0].tStart+0.1,'rep 1 leaving the bottom');
-  add(hard.tBottom,`rep ${hard.n} bottom`);
-  if(hard.grind&&hard.stickPct!=null){ add(hard.tStart+(hard.tEnd-hard.tStart)*0.5,`rep ${hard.n} mid-ascent (slowest point ~${hard.stickPct}% ROM)`); }
-  else add((hard.tStart+hard.tEnd)/2,`rep ${hard.n} mid-ascent`);
-  add(hard.tEnd,`rep ${hard.n} lockout`);
-  if(reps.length>1){const last=reps[reps.length-1]; if(last!==hard) add((last.tStart+last.tEnd)/2,`rep ${last.n} mid-ascent`);}
+  const add=(t,label)=>{if(picks.length>=16)return;const f=frameNear(t);if(f&&!picks.some(p=>p.f===f))picks.push({f,label});};
+  {const r0=reps[0]; add(Math.max(0,r0.tStart-(r0.tDown||0)-(r0.tPause||0)-0.5),'before rep 1 (start of descent)');}
+  add((hard.tStart+hard.tEnd)/2,`rep ${hard.n} mid-ascent${hard.grind&&hard.stickPct!=null?` (slowest point ~${hard.stickPct}% ROM)`:''}`);
+  reps.slice(0,7).forEach(r=>{ add(r.tBottom!=null?r.tBottom:r.tStart,`rep ${r.n} bottom`); add(r.tEnd,`rep ${r.n} lockout`); });
+  picks.sort((a,b)=>a.f.t-b.f.t);
   // bar height series at ~15 Hz
   const series=[]; let lt=-1;
   for(let i=0;i<s.T.length;i++){ if(s.T[i]-lt>=0.066){lt=s.T[i];series.push([+s.T[i].toFixed(2),s.ok[i]?+(s.Y[i]*100).toFixed(1):null]);} }
@@ -893,8 +959,19 @@ const escapeHtml=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':
 function showAI(entry,o){
   if(typeof o.set_rpe==='number'){ entry.ai=o.set_rpe; $('#res-ai').textContent=o.set_rpe.toFixed(1); store.set('sets',setHistory.slice(-100)); renderSets(); }
   let h='';
+  if(Array.isArray(o.reps)){
+    const bad=o.reps.filter(r=>r&&r.valid===false).map(r=>+r.n);
+    if(bad.length){
+      const nValid=Math.max(0,curSetData.reps.length-bad.length);
+      entry.trkReps=curSetData.reps.length; entry.reps=nValid;
+      $('#res-reps').textContent=nValid;
+      [...$('#res-reps-body').children].forEach(tr=>{if(bad.includes(+tr.dataset.n))tr.classList.add('rep-bad');});
+      h+=`<div style="color:var(--yellow);margin-bottom:6px">AI 판정: 실제 렙 ${nValid}개 — 트래커가 센 ${entry.trkReps}개 중 Rep ${bad.join(', ')}은 실제 렙이 아니에요.</div>`;
+      store.set('sets',setHistory.slice(-100)); renderSets();
+    }
+  }
   if(o.summary) h+=`<div>${escapeHtml(o.summary)}</div>`;
-  if(Array.isArray(o.reps)&&o.reps.length) h+=`<div class="muted" style="margin-top:6px">${o.reps.map(r=>`Rep ${r.n}: RPE ${r.rpe}${r.note?' — '+escapeHtml(r.note):''}`).join('<br>')}</div>`;
+  if(Array.isArray(o.reps)&&o.reps.length) h+=`<div class="muted" style="margin-top:6px">${o.reps.map(r=>`Rep ${r.n}: ${r.valid===false?'✕ 무효':'RPE '+r.rpe}${r.note?' — '+escapeHtml(r.note):''}`).join('<br>')}</div>`;
   if(o.sticking_point) h+=`<div style="margin-top:6px"><b>스티킹:</b> ${escapeHtml(o.sticking_point)}</div>`;
   if(Array.isArray(o.form_notes)&&o.form_notes.length) h+=`<ul style="margin-top:6px">${o.form_notes.map(n=>`<li>${escapeHtml(n)}</li>`).join('')}</ul>`;
   if(o.tracking_issues) h+=`<div class="muted" style="margin-top:6px">추적: ${escapeHtml(o.tracking_issues)}</div>`;
@@ -963,6 +1040,7 @@ $('#camera-wrap').addEventListener('pointerdown',ev=>{
   const keepR=active&&tracker.ok?tracker.r:null;
   tracker.init(G,WW,WH,p.x*k,p.y*k); trail=[];
   if(keepR) tracker.setRadius(keepR);          // keep scale stable mid-set
+  stab.init(G,WW,WH,tracker.cx,tracker.cy,tracker.r);
   if(active&&seg&&seg.Y.length){                // continue height from last known value
     let lastY=0; for(let i=seg.Y.length-1;i>=0;i--) if(seg.ok[i]){lastY=seg.Y[i];break;}
     y0=tracker.cy+lastY/metersPerPx();
