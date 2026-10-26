@@ -18,6 +18,11 @@ DATA YOU RECEIVE
   rpe = tracker's own estimate from vAdj and a velocity table.
 - series: [time s, bar height cm] samples (up = positive, null = tracking lost). Use it to judge the velocity
   profile yourself: hesitation, sticking points, uneven reps, failed or partial reps, re-racks.
+- failedAttempts: attempts the tracker thinks FAILED: the bar went down, rose only part of the way
+  (reachedPctOfROM) and then went back down or stalled. Frames are included for each.
+- joints: body joints over time (cm, same frame as the bar: x horizontal from the bar's start, y up = +),
+  from a phone pose model. They can be wrong (e.g. legs mistaken for arms on a bench); ignore them if they don't fit.
+  When they look right, use them for form notes (e.g. hips rising before the shoulders in a squat/deadlift).
 - personalCalibration: past sets where the lifter reported their real RPE for the slowest rep's vAdj.
   Weight this heavily — it reflects this lifter's own velocity-RPE relationship.
 - frames: still images at labelled moments (the bottom and lockout of every detected rep, the hardest rep's
@@ -31,6 +36,12 @@ compare its "bottom" and "lockout" frames. A real rep shows the bar clearly at t
 the chest; squat: hips at depth; deadlift: plates on/near the floor; OHP: bar near the shoulders) and then at lockout.
 If both frames look the same, the bar is in the rack, the scene shifted (camera moved), or the series shows no
 real descent and ascent, mark it "valid": false. When unsure, keep it valid. Base set RPE only on valid reps.
+
+FAILED REPS
+For each failed attempt, check its frames: a real fail shows the bar stuck below lockout, coming back down,
+dumped, on the safeties, or taken by a spotter. If the frames show it was actually completed (or never really
+attempted), it is not a fail. Set "failed" to true if the set ended with a real failed rep (set RPE is then 10),
+false otherwise, and explain briefly in "fail_note".
 
 HOW TO JUDGE
 - Typical mean concentric velocity at RPE 10 / 9 / 8 / 7 (population averages at a normal ROM — compare with vAdj; individuals vary):
@@ -46,6 +57,7 @@ OUTPUT
 Return ONLY one JSON object, no markdown, with exactly these keys:
 {"set_rpe": number, "rir": number, "confidence": "low"|"medium"|"high",
  "reps": [{"n": number, "valid": boolean, "rpe": number, "note": string}],
+ "failed": boolean, "fail_note": string,
  "sticking_point": string, "form_notes": [string], "tracking_issues": string, "summary": string}
 Write every string in Korean, short and practical (summary: 1-3 sentences). Use "" or [] when nothing to say.`;
 
@@ -94,13 +106,16 @@ export default {
       plateDiameterCm: Number(body.plateDiameterCm) || 45,
       trackerSetRpe: Number(body.trackerSetRpe) || null,
       reps: Array.isArray(body.reps) ? body.reps.slice(0, 30) : [],
+      failedAttempts: Array.isArray(body.failedAttempts) ? body.failedAttempts.slice(0, 5) : [],
+      joints: Array.isArray(body.joints) ? body.joints.slice(-200) : [],
       personalCalibration: Array.isArray(body.personalCalibration) ? body.personalCalibration.slice(0, 20) : [],
       series: Array.isArray(body.series) ? body.series : [],
       note: body.note ? String(body.note).slice(0, 300) : '',
     };
     let text = JSON.stringify(data);
-    while (text.length > MAX_DATA_CHARS && data.series.length > 50) {      // thin the series if too long
-      data.series = data.series.filter((_, i) => i % 2 === 0);
+    while (text.length > MAX_DATA_CHARS && (data.series.length > 50 || data.joints.length > 30)) {   // thin if too long
+      if (data.joints.length > 30) data.joints = data.joints.filter((_, i) => i % 2 === 0);
+      if (data.series.length > 50) data.series = data.series.filter((_, i) => i % 2 === 0);
       text = JSON.stringify(data);
     }
     content.push({ type: 'text', text: 'SET DATA (JSON):\n' + text + '\n\nReturn only the JSON object.' });

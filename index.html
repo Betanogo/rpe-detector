@@ -124,6 +124,7 @@ table.t td:first-child{color:var(--text3);}
 .kv b{display:block;font-family:var(--fm);font-size:18px;}
 .kv span{font-size:9px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;}
 .rep-bad td{text-decoration:line-through;opacity:.45}
+.fail-row td{color:var(--danger);font-weight:700}
 .ai-box{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6;color:var(--text);}
 .ai-box .muted{color:var(--text2);font-size:12px;}
 .ai-box ul{padding-left:18px;}
@@ -254,6 +255,7 @@ table.t td:first-child{color:var(--text3);}
       <button class="btn-wide" id="s-test" style="margin-top:8px;padding:8px;">연결 테스트</button>
     </div>
 
+    <div class="setting-row"><div><div class="setting-label">관절 추적</div><div class="setting-desc">머리·어깨·손목 등 표시 · 원판이 가려지면 몸으로 바 위치 보완</div></div><label class="toggle"><input type="checkbox" id="s-pose"/><span class="toggle-slider"></span></label></div>
     <div class="setting-row"><div><div class="setting-label">플레이트 지름</div><div class="setting-desc">탭한 원판 지름 (25/20kg 범퍼·IPF = 45cm)</div></div><span><input type="number" class="num-input" id="s-plate" value="45" min="20" max="50" step="0.5"/> cm</span></div>
     <div class="setting-row"><div><div class="setting-label">Auto-Record</div><div class="setting-desc">세트 시작/종료 시 자동 녹화</div></div><label class="toggle"><input type="checkbox" id="s-rec"/><span class="toggle-slider"></span></label></div>
     <div class="setting-row"><div><div class="setting-label">자동 세트 종료</div><div class="setting-desc">마지막 렙 후 X초 정지 시 저장</div></div><span><input type="number" class="num-input" id="s-stopsec" value="7" min="3" max="30"/> 초</span></div>
@@ -280,8 +282,8 @@ table.t td:first-child{color:var(--text3);}
 const LIFTS={
   BP: {label:'Bench',    minROM:0.12, refROM:0.35, table:[[0.17,10],[0.23,9],[0.30,8],[0.37,7],[0.45,6],[0.53,5],[0.62,4]]},
   SQ: {label:'Squat',    minROM:0.20, refROM:0.55, table:[[0.29,10],[0.36,9],[0.43,8],[0.50,7],[0.58,6],[0.66,5],[0.75,4]]},
-  DL: {label:'Deadlift', minROM:0.20, refROM:0.55, table:[[0.21,10],[0.28,9],[0.36,8],[0.44,7],[0.52,6],[0.60,5],[0.68,4]]},
-  OHP:{label:'OHP',      minROM:0.20, refROM:0.50, table:[[0.19,10],[0.26,9],[0.33,8],[0.40,7],[0.48,6],[0.56,5],[0.64,4]]},
+  DL: {label:'Deadlift', minROM:0.20, refROM:0.55, startsBottom:true, table:[[0.21,10],[0.28,9],[0.36,8],[0.44,7],[0.52,6],[0.60,5],[0.68,4]]},
+  OHP:{label:'OHP',      minROM:0.20, refROM:0.50, startsBottom:true, table:[[0.19,10],[0.26,9],[0.33,8],[0.40,7],[0.48,6],[0.56,5],[0.64,4]]},
   RDL:{label:'RDL',      minROM:0.15, refROM:0.45, table:[[0.28,10],[0.35,9],[0.42,8],[0.49,7],[0.57,6],[0.65,5],[0.73,4]]},
 };
 const RPE_LABEL=r=>r>=9.5?'Max':r>=9?'Near Max':r>=8.5?'Very Hard+':r>=8?'Very Hard':r>=7.5?'Hard':r>=7?'Somewhat Hard':r>=6?'Moderate':r>=5?'Light':'Warm-up';
@@ -291,7 +293,7 @@ const store={
   get(k,d){try{const v=localStorage.getItem('tl2_'+k);return v===null?d:JSON.parse(v);}catch(e){return d;}},
   set(k,v){try{localStorage.setItem('tl2_'+k,JSON.stringify(v));}catch(e){}}
 };
-const cfg=Object.assign({ai:false,worker:'',plate:45,rec:true,stopSec:7,wake:true,debug:false},store.get('cfg',{}));
+const cfg=Object.assign({ai:false,worker:'',plate:45,rec:true,stopSec:7,wake:true,debug:false,pose:true},store.get('cfg',{}));
 let calib=store.get('calib',{}); // {BP:[{v,rpe,t}],...}
 
 // ── RPE model ────────────────────────────────────────────
@@ -326,18 +328,20 @@ function rpeFromVelocity(lift,v){
 }
 
 // ── Plate tracker (NCC template matching on grayscale) ───
+// 3×3-cell NCC: the score is the mean of the best cells, so the plate is still found when an arm,
+// the torso, a rack upright or the frame edge hides part of it. Keeps the original template for re-acquiring.
 class PlateTracker{
-  constructor(){this.ok=false;}
+  constructor(){this.ok=false;this.A=new Float64Array(72);}
   init(G,W,H,cx,cy){
     this.W=W;this.H=H;
     this.r=estimateRadius(G,W,H,cx,cy);
     this.cx=cx;this.cy=cy;this.vx=0;this.vy=0;
-    this._makeTemplate(G);
-    this.score=1;this.lost=0;this.ok=true;
+    this._makeTemplate(G); this.T0=this.T.slice(); this._makeColors();
+    this.score=1;this.lost=0;this.ok=true;this._q=[];
   }
   setRadius(r){this.r=Math.max(6,r);}
   _makeTemplate(G){
-    const hs=Math.max(8,Math.min(42,Math.round(this.r*0.72)));
+    const hs=Math.max(9,Math.min(42,Math.round(this.r*0.72)));
     this.tw=this.th=hs*2;
     const x0=Math.round(this.cx-hs),y0=Math.round(this.cy-hs);
     this.T=new Float32Array(this.tw*this.th);
@@ -345,56 +349,92 @@ class PlateTracker{
       const x=Math.min(this.W-1,Math.max(0,x0+i)),y=Math.min(this.H-1,Math.max(0,y0+j));
       this.T[j*this.tw+i]=G[y*this.W+x];
     }
+    this.ci=new Uint8Array(this.tw); for(let i=0;i<this.tw;i++) this.ci[i]=Math.min(2,Math.floor(i*3/this.tw));
   }
-  // Quadrant NCC: score = mean of the 2 best quadrants → robust when part of the plate is hidden
-  _ncc(G,x0,y0,sp){
-    const W=this.W,tw=this.tw,th=this.th,T=this.T,hw=tw>>1,hh=th>>1;
-    const A=this._acc||(this._acc=new Float64Array(24)); A.fill(0);
-    for(let j=0;j<th;j+=sp){const row=(y0+j)*W+x0,trow=j*tw,qy=j>=hh?2:0;
-      for(let i=0;i<tw;i+=sp){const a=T[trow+i],b=G[row+i],o=(qy+(i>=hw?1:0))*6;
-        A[o]+=a;A[o+1]+=b;A[o+2]+=a*a;A[o+3]+=b*b;A[o+4]+=a*b;A[o+5]++;}}
-    const q=[];
-    for(let k=0;k<4;k++){const o=k*6,n=A[o+5];if(!n){q.push(-1);continue;}
+  // per-cell mean colour of the plate (chroma, so lighting changes matter less)
+  _makeColors(){
+    const W=this.W,tw=this.tw,th=this.th,ci=this.ci,x0=Math.round(this.cx-tw/2),y0=Math.round(this.cy-th/2);
+    const sr=new Float64Array(9),sb=new Float64Array(9),n=new Float64Array(9);
+    for(let j=0;j<th;j++)for(let i=0;i<tw;i++){const x=Math.min(W-1,Math.max(0,x0+i)),y=Math.min(this.H-1,Math.max(0,y0+j)),k=ci[j]*3+ci[i];
+      sr[k]+=CR[y*W+x];sb[k]+=CB[y*W+x];n[k]++;}
+    this.tcr=[...sr].map((v,k)=>v/n[k]); this.tcb=[...sb].map((v,k)=>v/n[k]);
+  }
+  // returns mean of the best cells; cells outside the frame are ignored
+  _ncc(G,x0,y0,sp,T){
+    const W=this.W,H=this.H,tw=this.tw,th=this.th,ci=this.ci,A=this.A;
+    const i0=Math.max(0,-x0),i1=Math.min(tw,W-x0),j0=Math.max(0,-y0),j1=Math.min(th,H-y0);
+    if(i1-i0<tw*0.45||j1-j0<th*0.45) return -2;
+    A.fill(0);
+    for(let j=j0;j<j1;j+=sp){const row=(y0+j)*W+x0,trow=j*tw,cy=ci[j]*3;
+      for(let i=i0;i<i1;i+=sp){const a=T[trow+i],p=row+i,b=G[p],k=cy+ci[i],o=k*6;
+        A[o]+=a;A[o+1]+=b;A[o+2]+=a*a;A[o+3]+=b*b;A[o+4]+=a*b;A[o+5]++;A[54+k*2]+=CR[p];A[55+k*2]+=CB[p];}}
+    const minN=(tw/3)*(th/3)/(sp*sp)*0.5, q=this._q; q.length=0; let valid=0;
+    for(let k=0;k<9;k++){const o=k*6,n=A[o+5];
+      if(n<minN){q.push(-1);continue;}
+      // colour gate: a cell whose colour is clearly not the plate's is covered by something → ignore it
+      const tr=this.tcr[k],tb=this.tcb[k],mr=A[54+k*2]/n,mb=A[55+k*2]/n,tc=Math.abs(tr)+Math.abs(tb);
+      if(tc>18?Math.abs(mr-tr)+Math.abs(mb-tb)>Math.max(18,tc*0.5):Math.abs(mr)+Math.abs(mb)>tc+30){q.push(-1);continue;}
       const va=A[o+2]-A[o]*A[o]/n,vb=A[o+3]-A[o+1]*A[o+1]/n;
-      q.push(va<=1e-6||vb<=1e-6?-1:(A[o+4]-A[o]*A[o+1]/n)/Math.sqrt(va*vb));}
-    this._q=q;
-    const s=q.slice().sort((a,b)=>b-a);
-    return (s[0]+s[1])/2;
+      q.push(va<=1e-6||vb<=1e-6?-1:(A[o+4]-A[o]*A[o+1]/n)/Math.sqrt(va*vb)); valid++;}
+    if(valid<4) return -2;
+    const s=q.slice().sort((a,b)=>b-a), K=valid>=7?5:4;
+    let m=0; for(let k=0;k<K;k++) m+=s[k]; return m/K;
   }
-  _scoreAt(G,cx,cy,sp){
-    const x0=Math.round(cx-this.tw/2),y0=Math.round(cy-this.th/2);
-    if(x0<0||y0<0||x0+this.tw>this.W||y0+this.th>this.H) return -2;
-    return this._ncc(G,x0,y0,sp);
+  _scoreAt(G,cx,cy,sp,T){ return this._ncc(G,Math.round(cx-this.tw/2),Math.round(cy-this.th/2),sp,T||this.T); }
+  // pen: motion prior — a match far from where the plate should be must score clearly better
+  _search(G,cx,cy,rx,ry,step,T,pen=0){
+    let best=-3,bx=cx,by=cy,raw=-3; const r2=this.r*this.r;
+    for(let dy=-ry;dy<=ry;dy+=step)for(let dx=-rx;dx<=rx;dx+=step){
+      const v=this._scoreAt(G,cx+dx,cy+dy,2,T), a=v-pen*(dx*dx+dy*dy)/r2; if(a>best){best=a;raw=v;bx=cx+dx;by=cy+dy;}
+    }
+    return {s:raw,x:bx,y:by};
   }
-  track(G){
+  // hint: predicted plate position from the body (wrist/shoulder) when the plate is hidden
+  track(G,hint){
     if(!this.ok) return null;
-    const px=this.cx+this.vx,py=this.cy+this.vy;
-    let rad=Math.max(10,Math.round(this.r*0.5));
-    if(this.lost>0) rad=Math.round(rad*2.5);
-    let best=-3,bx=px,by=py;
-    for(let dy=-rad;dy<=rad;dy+=2)for(let dx=-rad;dx<=rad;dx+=2){
-      const s=this._scoreAt(G,px+dx,py+dy,2); if(s>best){best=s;bx=px+dx;by=py+dy;}
+    let c;
+    const px=this.cx+this.vx, py=this.cy+this.vy;
+    if(this.lost>0&&hint) c=this._search(G,hint.x,hint.y,Math.round(this.r*0.9),Math.round(this.r*0.9),2,this.T,0.1);
+    else { const rad=Math.max(10,Math.round(this.r*0.5*(1+Math.min(this.lost,8)*0.25)));
+      c=this._search(G,px,py,rad,rad,2,this.T,this.lost?0.05:0.2);
+      if(this.lost===0){
+        // continuity first: if the spot right where the plate should be still matches decently, stay on it
+        // (part of the plate hidden lowers every score; a slightly better match further away is usually an edge)
+        const nr=Math.max(3,Math.round(this.r*0.18)), near=this._search(G,px,py,nr,nr,1,this.T,0);
+        if(near.s>=0.38&&c.s<near.s+0.12) c=near;
+      }
     }
-    // fine search
-    let fb=-3,fx=bx,fy=by;
+    let T=this.T;
+    if(this.lost>=2&&this.lost%2===0){                     // lost a while → scan the bar's vertical path with the original look
+      const col=this._search(G,this.cx,this.H/2,Math.round(this.r*0.7),Math.round(this.H/2),3,this.T0);
+      if(col.s>c.s+0.03&&col.s>0.5){c=col;T=this.T0;}   // far jump → must be a clear match
+    }
+    let fb=-3,fx=c.x,fy=c.y;
     for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-      const s=this._scoreAt(G,bx+dx,by+dy,1); if(s>fb){fb=s;fx=bx+dx;fy=by+dy;}
+      const v=this._scoreAt(G,c.x+dx,c.y+dy,1,T); if(v>fb){fb=v;fx=c.x+dx;fy=c.y+dy;}
     }
-    // subpixel parabola
-    const sL=this._scoreAt(G,fx-1,fy,1),sR=this._scoreAt(G,fx+1,fy,1);
-    const sU=this._scoreAt(G,fx,fy-1,1),sD=this._scoreAt(G,fx,fy+1,1);
-    let ox=0,oy=0;
-    const dxn=sL-2*fb+sR, dyn=sU-2*fb+sD;
+    const sL=this._scoreAt(G,fx-1,fy,1,T),sR=this._scoreAt(G,fx+1,fy,1,T),sU=this._scoreAt(G,fx,fy-1,1,T),sD=this._scoreAt(G,fx,fy+1,1,T);
+    let ox=0,oy=0; const dxn=sL-2*fb+sR,dyn=sU-2*fb+sD;
     if(sL>-2&&sR>-2&&dxn<0) ox=Math.max(-0.5,Math.min(0.5,0.5*(sL-sR)/dxn));
     if(sU>-2&&sD>-2&&dyn<0) oy=Math.max(-0.5,Math.min(0.5,0.5*(sU-sD)/dyn));
     this.score=fb;
-    this._scoreAt(G,fx,fy,1); const quads=this._q.slice(); // quadrant scores at final position
-    if(fb<0.33){ this.lost++; this.vx*=0.5; this.vy*=0.5; return {x:this.cx,y:this.cy,score:fb,lost:true}; }
+    this._scoreAt(G,fx,fy,1,this.T); const cells=this._q.slice();
+    // Staying locked: a weak match that jumps away from the predicted spot is an occluder edge, not the plate.
+    // Re-locking: needs a clear match, unless it agrees with where the body says the bar is.
+    const pdx=fx-(this.cx+this.vx), pdy=fy-(this.cy+this.vy), jump=Math.hypot(pdx,pdy);
+    const nearHint=hint&&Math.hypot(fx-hint.x,fy-hint.y)<this.r*0.6;
+    const need=this.lost>0?(nearHint?0.4:0.45):0.33;
+    const slide=this.lost===0&&fb<0.6&&jump>Math.max(4,this.r*0.25);
+    if(fb<need||slide){
+      this.lost++; this.vx*=0.5; this.vy*=0.5;
+      if(hint){this.cx=hint.x;this.cy=hint.y;}
+      return {x:this.cx,y:this.cy,score:fb,lost:true};
+    }
     const nx=fx+ox, ny=fy+oy;
-    this.vx=0.6*(nx-this.cx)+0.4*this.vx; this.vy=0.6*(ny-this.cy)+0.4*this.vy;
+    if(this.lost>0){this.vx=0;this.vy=0;} else {this.vx=0.6*(nx-this.cx)+0.4*this.vx; this.vy=0.6*(ny-this.cy)+0.4*this.vy;}
     this.cx=nx; this.cy=ny; this.lost=0;
     // slow template adaptation — only when the whole plate is clearly visible (never learn an occluder)
-    if(Math.min(...quads)>0.6&&fb>0.7){
+    if(cells.length===9&&Math.min(...cells)>0.5&&fb>0.72){
       const x0=Math.round(this.cx-this.tw/2),y0=Math.round(this.cy-this.th/2);
       if(x0>=0&&y0>=0&&x0+this.tw<=this.W&&y0+this.th<=this.H){
         for(let j=0;j<this.th;j++)for(let i=0;i<this.tw;i++){
@@ -417,6 +457,7 @@ class BgStab{
     const band=Math.max(1.6*r,W*0.12);
     for(let y=hs+4;y<H-hs-4;y+=Math.round(H/14))for(let x=hs+4;x<W-hs-4;x+=Math.round(W/10)){
       if(Math.abs(x-cx)<band) continue;                              // bar column moves vertically
+      if(Math.abs(y-cy)<r*2.6) continue;                              // barbell + other plates run sideways at bar height
       let m=0,m2=0,gx=0,gy=0;
       for(let j=0;j<ps;j++)for(let i=0;i<ps;i++){const v=G[(y-hs+j)*W+x-hs+i];m+=v;m2+=v*v;
         if(i)gx+=Math.abs(v-G[(y-hs+j)*W+x-hs+i-1]); if(j)gy+=Math.abs(v-G[(y-hs+j-1)*W+x-hs+i]);}
@@ -453,17 +494,97 @@ class BgStab{
       p.ok=fb>0.6; p.x=fx;p.y=fy;
       if(p.ok) res.push({dx:fx-p.x0,dy:fy-p.y0});
     }
-    if(res.length<Math.max(3,Math.ceil(this.n*0.4))){this.good=false;return;}
+    if(res.length<Math.max(3,Math.ceil(this.n*0.3))){this.good=false;return;}   // can't see the background → can't trust motion
     const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s[s.length>>1];};
     let mx=med(res.map(r=>r.dx)),my=med(res.map(r=>r.dy));
-    const inl=res.filter(r=>Math.abs(r.dx-mx)<3&&Math.abs(r.dy-my)<3);   // reject patches on moving people
-    if(inl.length<Math.max(3,res.length*0.5)){this.good=false;return;}
-    mx=inl.reduce((a,r)=>a+r.dx,0)/inl.length; my=inl.reduce((a,r)=>a+r.dy,0)/inl.length;
+    const tol=Math.max(3,this.W*0.025);                                   // handheld phones also rotate a little
+    const inl=res.filter(r=>Math.abs(r.dx-mx)<tol&&Math.abs(r.dy-my)<tol); // reject patches on moving people
+    if(inl.length>=3){ mx=inl.reduce((a,r)=>a+r.dx,0)/inl.length; my=inl.reduce((a,r)=>a+r.dy,0)/inl.length; }
     this.jerk=0.7*this.jerk+0.3*Math.hypot(mx-this.dx,my-this.dy);
     this.dx=mx;this.dy=my;this.good=true;
   }
 }
 const stab=new BgStab();
+
+// ── Body joints (MediaPipe Pose) ─────────────────────────
+// Shows the lifter's joints for the selected lift and, when the plate is hidden, predicts the bar
+// from the joint that moves with it (wrist; shoulder for squats) so tracking and rep timing continue.
+const MP_BASE=window.__MP_BASE||'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21';
+const MP_MODEL=window.__MP_MODEL||'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
+const LM={nose:0,shoulder:[11,12],elbow:[13,14],wrist:[15,16],hand:[19,20],hip:[23,24],knee:[25,26],ankle:[27,28]};
+const JOINTS={SQ:['head','shoulder','chest','hip','wrist','hand'],BP:['hand','wrist','elbow'],DL:['head','shoulder','hip','wrist','hand'],
+              OHP:['hand','wrist','elbow'],RDL:['head','shoulder','hip','wrist','hand']};
+const ANCHOR={SQ:'shoulder',BP:'wrist',DL:'wrist',OHP:'wrist',RDL:'wrist'};
+const JLABEL={head:'Head',shoulder:'Shoulder',chest:'Chest',hip:'Body',elbow:'Elbow',wrist:'Wrist',hand:'Hand'};
+const POSE={lm:null,loading:false,err:null,delegate:'',cur:null,side:0,lastRun:0,count:0,ms:0};
+async function loadPose(){
+  if(POSE.lm||POSE.loading||!cfg.pose) return;
+  POSE.loading=true; POSE.err=null;
+  try{
+    const mod=await import(MP_BASE+'/vision_bundle.mjs');
+    const files=await mod.FilesetResolver.forVisionTasks(MP_BASE+'/wasm');
+    const opts=d=>({baseOptions:{modelAssetPath:MP_MODEL,delegate:d},runningMode:'VIDEO',numPoses:1,
+      minPoseDetectionConfidence:0.3,minPosePresenceConfidence:0.3,minTrackingConfidence:0.3});
+    for(const d of (window.__MP_DELEGATE?[window.__MP_DELEGATE]:['GPU','CPU'])){
+      try{POSE.lm=await mod.PoseLandmarker.createFromOptions(files,opts(d));POSE.delegate=d;break;}catch(e){POSE.err=String(e&&e.message||e);}
+    }
+    if(POSE.lm) POSE.err=null;
+  }catch(e){POSE.err=String(e&&e.message||e);console.warn('[TATELIFT] pose load failed',e);}
+  POSE.loading=false; updateTargetUI();
+}
+// run the landmarker on the current video frame (≤ ~20 Hz) → joints in work px
+function runPose(){
+  if(!POSE.lm||!cfg.pose) return;
+  const now=performance.now(); if(now-POSE.lastRun<Math.max(45,POSE.ms*3)) return;   // pose gets ≤ ~1/3 of the time; plate tracking keeps its frame rate
+  POSE.lastRun=now;
+  let r; try{ r=POSE.lm.detectForVideo(video,Math.round(now)); }catch(e){ return; }
+  POSE.ms=0.8*POSE.ms+0.2*(performance.now()-now); POSE.count++;
+  const L=r&&r.landmarks&&r.landmarks[0];
+  if(!L){POSE.cur=null;return;}
+  const P=i=>({x:L[i].x*WW,y:L[i].y*WH,v:L[i].visibility==null?1:L[i].visibility});
+  const sideVis=s=>[LM.shoulder,LM.elbow,LM.wrist,LM.hip].reduce((a,p)=>a+(L[p[s]].visibility??1),0);
+  const vl=sideVis(0),vr=sideVis(1);
+  if(POSE.side===0&&vr>vl+0.4) POSE.side=1; else if(POSE.side===1&&vl>vr+0.4) POSE.side=0;
+  const sd=POSE.side, j={head:P(LM.nose)};
+  for(const k of ['shoulder','elbow','wrist','hand','hip','knee','ankle']) j[k]=P(LM[k][sd]);
+  j.chest={x:j.shoulder.x*0.75+j.hip.x*0.25,y:j.shoulder.y*0.75+j.hip.y*0.25,v:Math.min(j.shoulder.v,j.hip.v)};
+  POSE.cur={j,wall:now};
+}
+const poseNow=()=>POSE.cur&&performance.now()-POSE.cur.wall<160?POSE.cur:null;
+// plate ≈ a·anchor + b (vertical), learned while both are visible; x uses a plain offset
+const FUS={reset(){this.n=0;this.sx=0;this.sy=0;this.sxx=0;this.syy=0;this.sxy=0;this.ox=0;this.cnt=0;},n:0};
+FUS.reset();
+function fusLearn(anc,res){
+  if(!anc||anc.v<0.5) return;
+  const f2=0.995;                                          // slow memory (~7 s): needs to span real bar movement
+  FUS.n=FUS.n*f2+1; FUS.sx=FUS.sx*f2+anc.y; FUS.sy=FUS.sy*f2+res.y; FUS.sxx=FUS.sxx*f2+anc.y*anc.y; FUS.syy=FUS.syy*f2+res.y*res.y; FUS.sxy=FUS.sxy*f2+anc.y*res.y;
+  FUS.ox=FUS.n<2?res.x-anc.x:0.9*FUS.ox+0.1*(res.x-anc.x); FUS.cnt=(FUS.cnt||0)+1;
+}
+function fusPredict(anc){
+  if(!anc||anc.v<0.5||(FUS.cnt||0)<8) return null;
+  const n=FUS.n, mx=FUS.sx/n, my=FUS.sy/n, vxx=FUS.sxx/n-mx*mx, vyy=FUS.syy/n-my*my, vxy=FUS.sxy/n-mx*my;
+  // only trust the joint once it has been seen moving together with the plate (wrong joints, e.g. a leg
+  // mistaken for an arm on a bench, don't move with the bar and are ignored)
+  if(vyy<9||vxx<4||vxy/Math.sqrt(vxx*vyy)<0.8) return null;
+  const a=Math.max(0.6,Math.min(1.6,vxy/vxx));
+  return {x:anc.x+FUS.ox, y:my+a*(anc.y-mx)};
+}
+function drawPose(k){
+  const pz=poseNow(); if(!pz||!cfg.pose) return;
+  const j=pz.j, seen=p=>p&&p.v>0.35;
+  octx.lineWidth=Math.max(2,overlay.width/300); octx.strokeStyle='rgba(255,255,255,0.35)';
+  for(const [a,b] of [['head','shoulder'],['shoulder','hip'],['hip','knee'],['knee','ankle'],['shoulder','elbow'],['elbow','wrist'],['wrist','hand']]){
+    if(!seen(j[a])||!seen(j[b])) continue;
+    octx.beginPath(); octx.moveTo(j[a].x*k,j[a].y*k); octx.lineTo(j[b].x*k,j[b].y*k); octx.stroke();
+  }
+  const fs=Math.max(11,overlay.width/55); octx.font=`600 ${fs}px Inter,system-ui,sans-serif`;
+  for(const name of JOINTS[curLift]){
+    const p=j[name]; if(!seen(p)) continue;
+    octx.fillStyle=name===ANCHOR[curLift]?'#ffc107':'#ff7ad9';
+    octx.beginPath(); octx.arc(p.x*k,p.y*k,Math.max(4,overlay.width/110),0,Math.PI*2); octx.fill();
+    if(cfg.debug){octx.fillStyle='rgba(255,255,255,.85)';octx.fillText(JLABEL[name],p.x*k+8,p.y*k-6);}
+  }
+}
 
 // Estimate plate radius from tap point: find the most consistent circular edge across rays
 function estimateRadius(G,W,H,cx,cy){
@@ -496,8 +617,9 @@ function estimateRadius(G,W,H,cx,cy){
 // A rep = bar travels up by ≥ minROM from the lowest point since the previous rep.
 // Small reversals near lockout (tracking jitter) extend the same rep instead of ending it.
 class RepSeg{
-  constructor(lift,onRep){
-    this.lift=lift; this.minROM=LIFTS[lift].minROM; this.eps=0.03; this.onRep=onRep;
+  constructor(lift,onRep,onFail){
+    this.lift=lift; this.minROM=LIFTS[lift].minROM; this.eps=0.03; this.onRep=onRep; this.onFail=onFail||(()=>{});
+    this.fails=[]; this.pending=null; this.failed=false;
     this.T=[];this.Y=[];this.X=[];this.ok=[];
     this.raw=[]; this.ema=null;
     this.dir=0;this.cur=-1;this.mn=-1;this.mx=-1;this.ext=[];
@@ -510,7 +632,7 @@ class RepSeg{
     this.ema=this.ema===null?med:0.55*med+0.45*this.ema;
     const i=this.T.length; this.T.push(t);this.Y.push(this.ema);this.X.push(x);this.ok.push(ok);
     if(!ok) return;
-    this._zig(i); this._still(i);
+    this._zig(i); this._still(i); this._failWatch(i);
   }
   vel(i){
     const a=Math.max(0,i-2), b=Math.min(this.T.length-1,i+2);
@@ -544,7 +666,70 @@ class RepSeg{
       if(dip<this.minROM*0.5){ if(Y[hi]>Y[last._hi]) this._rep(last._lo,hi,last); return; }
     }
     const from=this._boundary(), lo=this._lowestSince(from,hi);
-    if(lo<hi&&Y[hi]-Y[lo]>=this.minROM) this._rep(lo,hi,null);
+    if(!(lo<hi)) return;
+    const top=this._highestIn(from,lo), descent=top<lo?Y[top]-Y[lo]:0, rise=Y[hi]-Y[lo];
+    // after a real descent the bar must come most of the way back up to be a rep
+    const reached=descent<this.minROM||rise>=0.8*descent;
+    if(rise>=this.minROM&&reached){ this._rep(lo,hi,null); return; }
+    const a=this._attempt(lo,hi);
+    if(a&&!this.pending) this.pending={...a,lo,hi,kind:'reversal'};   // went back down → confirm in _failWatch
+  }
+  // ── failed reps ──
+  // An attempt = the bar went down (or, for deadlift/OHP, started at the bottom), rose noticeably,
+  // but stopped short of lockout.
+  _attempt(lo,h){
+    const Y=this.Y, L=LIFTS[this.lift], last=this.reps[this.reps.length-1], from=this._boundary();
+    const top=this._highestIn(from,lo), descent=top<lo?Y[top]-Y[lo]:0, rise=Y[h]-Y[lo];
+    let ref, fromBottom=false;
+    if(descent>=this.minROM) ref=descent;
+    else if(L.startsBottom){ ref=last?last.rom:L.refROM; fromBottom=true; }
+    else return null;                                          // never went down: unracking, setting up
+    const minRise=Math.max(0.05,(fromBottom&&!last?0.25:0.2)*ref);
+    if(rise<minRise||rise>=0.8*ref) return null;
+    return {frac:rise/ref,ref,rise};
+  }
+  _failWatch(i){
+    const Y=this.Y,T=this.T,P=this.pending;
+    if(P){
+      if(Y[i]>Y[P.hi]+this.eps){                               // kept going up after all → not a fail
+        if(P.kind==='stall'&&P.f){ this.fails.splice(this.fails.indexOf(P.f),1); this.onFail(P.f,'cancel'); }
+        this.pending=null; return;
+      }
+      if(P.kind==='reversal'){
+        if(Y[i]<Y[P.lo]-this.eps){ this.pending=null; return; }    // went lower: that was a wobble on the way down
+        if(Y[i]<=Y[P.lo]+Math.max(0.03,0.4*P.rise)){ if(P.tm==null) P.tm=T[i]; }
+        if((P.tm!=null&&T[i]-P.tm>=0.8)||T[i]-T[P.hi]>3) this._fail(P,true);   // back at the bottom and stays there
+      }
+      return;
+    }
+    // stall: rising after the bottom, then stuck below lockout for 2 s
+    if(this.dir!==1||this.failed) return;
+    const h=this.cur, last=this.reps[this.reps.length-1];
+    if(last&&last._hi===h) return;
+    if(Y[h]-Y[i]>=this.eps) return;
+    const lo=this._lowestSince(this._boundary(),h);
+    let k=h; while(k>lo&&Y[k-1]>=Y[h]-0.01) k--;               // when it got (within 1 cm) to where it is stuck
+    if(T[i]-T[k]<2.0) return;
+    const a=lo<h?this._attempt(lo,h):null;
+    if(a){ this.pending={...a,lo,hi:h,kind:'stall'}; this._fail(this.pending,false); }
+  }
+  _fail(P,final){
+    const T=this.T;
+    if(!P.f){ P.f={n:this.fails.length+1,kind:P.kind,frac:+P.frac.toFixed(2),pct:Math.round(P.frac*100),
+      rise:+P.rise.toFixed(3),tBottom:+T[P.lo].toFixed(2),tPeak:+T[P.hi].toFixed(2),final}; this.fails.push(P.f); }
+    P.f.final=final;
+    if(final){ this.failed=true; this.pending=null; }
+    this.onFail(P.f,final?'final':'maybe');
+  }
+  // set ended: an unfinished attempt counts as a fail
+  finish(){
+    if(this.pending){ this._fail(this.pending,true); return; }
+    if(this.dir===1&&!this.failed&&this.T.length){
+      const h=this.cur, last=this.reps[this.reps.length-1];
+      if(last&&last._hi===h) return;
+      const lo=this._lowestSince(this._boundary(),h), a=lo<h?this._attempt(lo,h):null;
+      if(a) this._fail({...a,lo,hi:h,kind:'end'},true);
+    }
   }
   _still(i){
     if(this.dir!==1) return;
@@ -558,6 +743,11 @@ class RepSeg{
     if(nearTop&&T[i]-T[h]>=holdT) this._candidate(h);
   }
   _rep(lo,hi,existing){
+    if(this.failed&&!existing) return;                         // after a failed rep: spotter / re-rack, not a rep
+    if(this.pending&&this.pending.kind==='stall'&&this.pending.lo===lo){   // a slow grind that did finish
+      if(this.pending.f){ this.fails.splice(this.fails.indexOf(this.pending.f),1); this.onFail(this.pending.f,'cancel'); }
+      this.pending=null;
+    }
     const T=this.T,Y=this.Y,yL=Y[lo],yH=Y[hi],rom=yH-yL;
     if(rom<this.minROM||rom>1.2) return;
     const band=0.015;
@@ -618,12 +808,12 @@ const $=s=>document.querySelector(s);
 const video=$('#video'),overlay=$('#overlay'),octx=overlay.getContext('2d');
 const work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadFrequently:true});
 const WORK_W=320;
-let G=null,WW=0,WH=0;
+let G=null,CR=null,CB=null,WW=0,WH=0;
 let stream=null,facingMode='environment',camOn=true;
 let curLift='BP',weightKg=null,weightUnit='kg';
 const tracker=new PlateTracker();
 let seg=null,active=false,counting=false,t0=0,y0=0,lastT=0,lastRepWall=0,lastMoveWall=0;
-let shakeWarned=0;
+let shakeWarned=0, lastSrc='', joints=[], x0=0;
 let trail=[];       // recent positions (work px) for bar path
 let setHistory=store.get('sets',[]),setNum=setHistory.length?Math.max(...setHistory.map(s=>s.n)):0;
 let curSetData=null;
@@ -645,10 +835,10 @@ async function startCamera(){
 function grabGray(){
   const vw=video.videoWidth,vh=video.videoHeight; if(!vw) return false;
   WW=WORK_W; WH=Math.round(WORK_W*vh/vw);
-  if(work.width!==WW||work.height!==WH){work.width=WW;work.height=WH;G=new Float32Array(WW*WH);}
+  if(work.width!==WW||work.height!==WH){work.width=WW;work.height=WH;G=new Float32Array(WW*WH);CR=new Float32Array(WW*WH);CB=new Float32Array(WW*WH);}
   wctx.drawImage(video,0,0,WW,WH);
   const d=wctx.getImageData(0,0,WW,WH).data;
-  for(let i=0,j=0;i<G.length;i++,j+=4) G[i]=0.299*d[j]+0.587*d[j+1]+0.114*d[j+2];
+  for(let i=0,j=0;i<G.length;i++,j+=4){const r=d[j],g=d[j+1],b=d[j+2];G[i]=0.299*r+0.587*g+0.114*b;CR[i]=r-g;CB[i]=b-g;}
   return true;
 }
 
@@ -676,10 +866,17 @@ function loop(now,meta){
   const t=frameTime(meta);
   fpsN++; if(performance.now()-fpsT>1000){fps=fpsN;fpsN=0;fpsT=performance.now();}
   let res=null;
+  runPose();
+  const pz=poseNow(), anc=pz?pz.j[ANCHOR[curLift]]:null;
   if(tracker.ok){
-    res=tracker.track(G);
+    const pred=tracker.lost>0?fusPredict(anc):null;
+    res=tracker.track(G,pred);
     stab.track(G);
-    if(res&&!stab.good) res={...res,lost:true,shake:true};   // camera moving too much → don't trust this frame
+    lastSrc='plate';
+    if(res&&!res.lost) fusLearn(anc,res);
+    else if(res&&pred){ res={x:pred.x,y:pred.y,score:res.score,lost:false}; lastSrc='pose'; }   // plate hidden → follow the body
+    else lastSrc='lost';
+    if(res&&!stab.good){ res={...res,lost:true,shake:true}; lastSrc='shake'; }   // camera moving too much → don't trust this frame
     if(res&&!res.lost){trail.push({x:res.x,y:res.y,t});}
     while(trail.length&&t-trail[0].t>3) trail.shift();
   }
@@ -694,6 +891,7 @@ function loop(now,meta){
     checkAutoStop(v);
     if((stab.jerk>1.5||!stab.good)&&performance.now()-shakeWarned>4000){shakeWarned=performance.now();toast('카메라가 흔들려요 — 폰을 고정해 주세요');}
     captureFrame(t-t0);
+    recordJoints(t-t0,pz);
   }
   drawOverlay(res);
   if(cfg.debug) drawDebug(res);
@@ -707,8 +905,9 @@ function scheduleFrame(){
 // ── Overlay ──────────────────────────────────────────────
 function drawOverlay(res){
   const W=overlay.width,H=overlay.height; octx.clearRect(0,0,W,H);
-  if(!tracker.ok||!WW) return;
+  if(!WW) return;
   const k=W/WW;
+  if(!tracker.ok){ drawPose(k); return; }
   // bar path
   if(trail.length>1){
     octx.lineWidth=Math.max(2,W/250); octx.strokeStyle='rgba(0,229,200,0.75)'; octx.beginPath();
@@ -717,8 +916,10 @@ function drawOverlay(res){
   const lost=res&&res.lost;
   const ph=active&&seg?seg.phase(seg.T.length-1):'hold';
   const col=lost?'#e05555':ph==='up'?'#00e5c8':ph==='down'?'#ffc107':ph==='bottom'?'#e06c00':'#ffffff';
+  drawPose(k);
   octx.lineWidth=Math.max(3,W/180); octx.strokeStyle=col;
-  octx.beginPath(); octx.arc(tracker.cx*k,tracker.cy*k,tracker.r*k,0,Math.PI*2); octx.stroke();
+  if(lastSrc==='pose') octx.setLineDash([8,6]);
+  octx.beginPath(); octx.arc((res?res.x:tracker.cx)*k,(res?res.y:tracker.cy)*k,tracker.r*k,0,Math.PI*2); octx.stroke(); octx.setLineDash([]);
   octx.fillStyle=col; octx.beginPath(); octx.arc(tracker.cx*k,tracker.cy*k,Math.max(4,W/120),0,Math.PI*2); octx.fill();
   // velocity bar
   if(active&&seg&&seg.T.length>4){
@@ -739,6 +940,7 @@ function drawDebug(res){
     'y     '+(i>=0?(seg.Y[i]*100).toFixed(1)+'cm':'—'),
     'v     '+(i>2?seg.vel(i-2).toFixed(2)+'m/s':'—'),
     'dir   '+(seg?seg.dir:'—')+'  ext '+(seg?seg.ext.length:0),
+    'pose  '+(POSE.lm?`${POSE.delegate} ${POSE.ms.toFixed(0)}ms ${poseNow()?'✓':'—'} src ${lastSrc}`:(POSE.err?'ERR':POSE.loading?'loading':'off')),
     'cam   '+(stab.n>=3?`${stab.dx.toFixed(1)},${stab.dy.toFixed(1)}px ${stab.good?'ok':'SHAKE'} (${stab.P.filter(p=>p.ok).length}/${stab.n})`:'no bg'),
   ].join('\n');
   if(WW&&stab.n){const k=overlay.width/WW;octx.lineWidth=1.5;stab.P.forEach(p=>{octx.strokeStyle=p.ok?'rgba(255,193,7,.8)':'rgba(224,85,85,.8)';octx.strokeRect((p.x-p.hs)*k,(p.y-p.hs)*k,p.hs*2*k,p.hs*2*k);});}
@@ -754,13 +956,18 @@ function updateTargetUI(){
   $('#tap-hint').style.display=tracker.ok?'none':'block';
   $('#radius-ctl').classList.toggle('visible',tracker.ok&&!active);
   $('#track-label').textContent=tracker.ok?`PLATE ⌀${cfg.plate}`:'NO TARGET';
-  $('#track-sub').textContent=tracker.ok?'탭하면 다시 선택':'Plate tracking';
+  $('#track-sub').textContent=(tracker.ok?'탭하면 다시 선택':'Plate tracking')+(cfg.pose?(POSE.lm?' · 관절 ✓':POSE.loading?' · 관절 로딩…':POSE.err?' · 관절 ✕':''):'');
 }
 
 function renderReps(){
   const reps=seg?seg.reps:[];
   $('#m-reps').textContent=reps.length;
   const tb=$('#rep-tbody'); tb.innerHTML='';
+  (seg?seg.fails:[]).slice().reverse().forEach(f=>{
+    const tr=document.createElement('tr'); tr.className='fail-row';
+    tr.innerHTML=`<td>✕</td><td colspan="3">FAIL${f.final?'':'?'} · ${f.pct}% 지점</td><td class="rpe-high">10</td>`;
+    tb.appendChild(tr);
+  });
   [...reps].reverse().forEach(r=>{
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${r.n}${r.grind?' ⚠':''}</td><td>${r.mcv.toFixed(2)}</td><td>${r.tUp.toFixed(2)}</td><td>${r.total.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
@@ -783,7 +990,7 @@ function renderSets(){
   const tb=$('#sets-tbody'); tb.innerHTML='';
   setHistory.slice().reverse().forEach(s=>{
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${s.n}</td><td>${s.ex}</td><td>${s.wt||'—'}</td><td>${s.reps}</td><td class="${rpeCls(s.rpe)}">${s.rpe.toFixed(1)}</td><td>${s.ai!=null?s.ai:'—'}</td><td>${s.you!=null?s.you:'—'}</td>`;
+    tr.innerHTML=`<td>${s.n}</td><td>${s.ex}</td><td>${s.wt||'—'}</td><td>${s.reps}${s.fail?' <span style="color:var(--danger)">+✕'+s.fail+'</span>':''}</td><td class="${rpeCls(s.rpe)}">${s.rpe.toFixed(1)}</td><td>${s.ai!=null?s.ai:'—'}</td><td>${s.you!=null?s.you:'—'}</td>`;
     tb.appendChild(tr);
   });
 }
@@ -793,6 +1000,16 @@ function onRep(rep,isNew){
   lastRepWall=performance.now();
   renderReps();
   if(isNew){ toast(`Rep ${rep.n} ✓  ${rep.mcv.toFixed(2)} m/s — RPE ${rep.rpe.toFixed(1)}`); if(navigator.vibrate) navigator.vibrate(40); }
+}
+let failStopT=null;
+function onFail(f,state){
+  renderReps();
+  if(state==='cancel'){ toast('렙 완료 — 실패 아님'); return; }
+  lastRepWall=performance.now();
+  if(state==='maybe'){ toast(`FAIL? — ${f.pct}% 지점에서 멈춤`,3000); if(navigator.vibrate) navigator.vibrate([200,100,200]); return; }
+  toast(`✕ FAIL — ${f.pct}% 지점에서 실패`,3500);
+  if(navigator.vibrate) navigator.vibrate([500,150,500]);
+  clearTimeout(failStopT); failStopT=setTimeout(()=>{ if(active) stopSet(true); },4000);   // set is over after a failed rep
 }
 function startCountdown(){
   if(counting) return;
@@ -807,8 +1024,8 @@ function startCountdown(){
   },1000);
 }
 function beginSet(){
-  seg=new RepSeg(curLift,onRep);
-  t0=lastT; y0=tracker.cy-stab.dy; frames.length=0; shakeWarned=0;
+  seg=new RepSeg(curLift,onRep,onFail);
+  t0=lastT; y0=tracker.cy-stab.dy; x0=tracker.cx-stab.dx; frames.length=0; joints=[]; lastJ=-1; shakeWarned=0;
   active=true; lastRepWall=lastMoveWall=performance.now();
   $('#btn-start').textContent='⏸ Stop'; $('#btn-start').classList.add('stopping');
   updateTargetUI(); renderReps();
@@ -831,14 +1048,16 @@ function stopSet(auto=false){
   updateTargetUI();
   if(isRecording) stopRec();
   if(auto) alertStop();
-  releaseWake();
-  const reps=seg?seg.reps:[];
-  if(!reps.length){toast('렙이 감지되지 않았어요');return;}
+  releaseWake(); clearTimeout(failStopT);
+  if(seg) seg.finish();
+  const reps=seg?seg.reps:[], fails=seg?seg.fails.filter(f=>f.final):[];
+  if(!reps.length&&!fails.length){toast('렙이 감지되지 않았어요');return;}
   setNum++;
-  const hardest=reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a);
-  const entry={n:setNum,ex:LIFTS[curLift].label,lift:curLift,wt:weightKg?`${weightKg}${weightUnit}`:'',reps:reps.length,rpe:Math.max(...reps.map(r=>r.rpe)),slowMcv:hardest.vAdj,ai:null,you:null,time:Date.now()};
+  const hardest=reps.length?reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a):null;
+  const entry={n:setNum,ex:LIFTS[curLift].label,lift:curLift,wt:weightKg?`${weightKg}${weightUnit}`:'',reps:reps.length,fail:fails.length,
+    rpe:fails.length?10:Math.max(...reps.map(r=>r.rpe)),slowMcv:hardest?hardest.vAdj:null,ai:null,you:null,time:Date.now()};
   setHistory.push(entry); store.set('sets',setHistory.slice(-100)); renderSets();
-  curSetData={entry,reps:reps.map(stripRep),seg};
+  curSetData={entry,reps:reps.map(stripRep),fails:fails.map(f=>({...f})),seg};
   openResult(curSetData);
   if(cfg.ai&&cfg.worker) runAI(curSetData);
 }
@@ -867,7 +1086,7 @@ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==
 function openResult(d){
   const {entry,reps}=d;
   $('#res-title').textContent=`SET ${entry.n} — ${entry.ex}${entry.wt?' '+entry.wt:''}`;
-  $('#res-reps').textContent=reps.length;
+  $('#res-reps').textContent=reps.length+(d.fails.length?` +✕${d.fails.length}`:'');
   $('#res-trk').textContent=entry.rpe.toFixed(1);
   $('#res-ai').textContent=cfg.ai&&cfg.worker?'…':'—';
   const tb=$('#res-reps-body'); tb.innerHTML='';
@@ -877,6 +1096,11 @@ function openResult(d){
     tr.innerHTML=`<td>${r.n}${r.grind?' ⚠':''}</td><td>${r.mcv.toFixed(2)}</td><td>${r.tDown!=null?r.tDown.toFixed(1):'—'}</td><td>${r.tPause!=null?r.tPause.toFixed(1):'—'}</td><td>${r.tUp.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
     tb.appendChild(tr);
   });
+  d.fails.forEach(f=>{
+    const tr=document.createElement('tr'); tr.className='fail-row';
+    tr.innerHTML=`<td>✕</td><td colspan="4">FAIL — 바가 ${f.pct}% 지점에서 멈췄어요</td><td class="rpe-high">10</td>`;
+    tb.appendChild(tr);
+  });
   $('#res-ai-box').innerHTML=cfg.ai&&cfg.worker?'<span class="spinner"></span><span class="muted">Claude가 세트를 분석하는 중…</span>':'<span class="muted">설정에서 AI 세트 분석을 켜고 Worker URL을 입력하면 분석이 표시돼요.</span>';
   const chips=$('#res-chips'); chips.innerHTML='';
   for(let r=6;r<=10;r+=0.5){
@@ -884,6 +1108,7 @@ function openResult(d){
     b.onclick=()=>{
       chips.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel')); b.classList.add('sel');
       entry.you=r; store.set('sets',setHistory.slice(-100)); renderSets();
+      if(entry.slowMcv==null){ toast('저장 — 실패 세트는 보정에 쓰지 않아요'); return; }
       const arr=calib[entry.lift]||(calib[entry.lift]=[]);
       const prev=arr.findIndex(p=>p.set===entry.time); const pt={v:entry.slowMcv,rpe:r,set:entry.time};
       if(prev>=0) arr[prev]=pt; else arr.push(pt);
@@ -900,6 +1125,14 @@ function updateCalibInfo(){
   $('#s-calib-info').textContent=parts.length?parts.join(' · ')+' (3개 이상부터 적용)':'아직 없음 — 세트 후 체감 RPE를 탭하세요';
 }
 
+// joint positions (cm, same frame as the bar: up = +, x relative to the bar's start) at ~5 Hz for the AI
+let lastJ=-1;
+function recordJoints(tRel,pz){
+  if(!pz||tRel-lastJ<0.2) return; lastJ=tRel;
+  const m=metersPerPx()*100, o={t:+tRel.toFixed(2)};
+  for(const name of JOINTS[curLift]){const p=pz.j[name]; if(p&&p.v>0.35) o[name]=[+(((p.x-stab.dx)-x0)*m).toFixed(1),+(-((p.y-stab.dy)-y0)*m).toFixed(1)];}
+  joints.push(o); if(joints.length>400) joints.shift();
+}
 // ── Frame ring buffer (for AI review) ────────────────────
 const frames=[]; let lastCap=-1;
 const capCanvas=document.createElement('canvas'),capCtx=capCanvas.getContext('2d');
@@ -918,15 +1151,16 @@ function frameNear(t){let best=null,bd=1e9;frames.forEach(f=>{const d=Math.abs(f
 
 // ── AI review via Cloudflare Worker ──────────────────────
 async function runAI(d){
-  const {entry,reps,seg:s}=d;
+  const {entry,reps,fails,seg:s}=d;
   // key frames: bottom + lockout of every rep (so Claude can reject reps that never happened),
   // plus the hardest rep's mid-ascent and the moment before the first rep
-  const hard=reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a);
+  const hard=reps.length?reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a):null;
   const picks=[];
   const add=(t,label)=>{if(picks.length>=16)return;const f=frameNear(t);if(f&&!picks.some(p=>p.f===f))picks.push({f,label});};
-  {const r0=reps[0]; add(Math.max(0,r0.tStart-(r0.tDown||0)-(r0.tPause||0)-0.5),'before rep 1 (start of descent)');}
-  add((hard.tStart+hard.tEnd)/2,`rep ${hard.n} mid-ascent${hard.grind&&hard.stickPct!=null?` (slowest point ~${hard.stickPct}% ROM)`:''}`);
-  reps.slice(0,7).forEach(r=>{ add(r.tBottom!=null?r.tBottom:r.tStart,`rep ${r.n} bottom`); add(r.tEnd,`rep ${r.n} lockout`); });
+  fails.forEach(f=>{ add(f.tBottom,`failed attempt ${f.n} bottom`); add(f.tPeak,`failed attempt ${f.n} highest point (${f.pct}% of ROM)`); add(f.tPeak+1.2,`failed attempt ${f.n} +1.2 s`); });
+  if(reps.length){const r0=reps[0]; add(Math.max(0,r0.tStart-(r0.tDown||0)-(r0.tPause||0)-0.5),'before rep 1 (start of descent)');}
+  if(hard) add((hard.tStart+hard.tEnd)/2,`rep ${hard.n} mid-ascent${hard.grind&&hard.stickPct!=null?` (slowest point ~${hard.stickPct}% ROM)`:''}`);
+  reps.slice(0,6).forEach(r=>{ add(r.tBottom!=null?r.tBottom:r.tStart,`rep ${r.n} bottom`); add(r.tEnd,`rep ${r.n} lockout`); });
   picks.sort((a,b)=>a.f.t-b.f.t);
   // bar height series at ~15 Hz
   const series=[]; let lt=-1;
@@ -934,6 +1168,8 @@ async function runAI(d){
   const payload={
     lift:curLiftName(entry.lift), weight:entry.wt||null, plateDiameterCm:cfg.plate,
     reps, trackerSetRpe:entry.rpe,
+    failedAttempts:fails.map(f=>({n:f.n,kind:f.kind,reachedPctOfROM:f.pct,tBottom:f.tBottom,tPeak:f.tPeak})),
+    joints:joints.slice(-200), // [t, joint:[x cm, y cm]] same frame as the bar
     series, // [time s, bar height cm (up = positive)]
     personalCalibration:(calib[entry.lift]||[]).slice(-12).map(p=>({slowestRepRomNormalisedVelocity:p.v,reportedRpe:p.rpe})),
     note:'vAdj = mcv * sqrt(refROM/rom), refROM '+LIFTS[entry.lift].refROM+' m. Calibration uses vAdj.',
@@ -956,6 +1192,7 @@ function parseAI(text){
   return JSON.parse(m[0]);
 }
 const escapeHtml=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+const d0fails=()=>curSetData&&curSetData.fails&&curSetData.fails.length>0;
 function showAI(entry,o){
   if(typeof o.set_rpe==='number'){ entry.ai=o.set_rpe; $('#res-ai').textContent=o.set_rpe.toFixed(1); store.set('sets',setHistory.slice(-100)); renderSets(); }
   let h='';
@@ -970,6 +1207,7 @@ function showAI(entry,o){
       store.set('sets',setHistory.slice(-100)); renderSets();
     }
   }
+  if(o.failed===true||(o.failed===false&&d0fails())) h+=`<div style="color:${o.failed?'var(--danger)':'var(--teal)'};margin-bottom:6px">${o.failed?'✕ AI 판정: 실패 렙':'AI 판정: 실패 아님'}${o.fail_note?' — '+escapeHtml(o.fail_note):''}</div>`;
   if(o.summary) h+=`<div>${escapeHtml(o.summary)}</div>`;
   if(Array.isArray(o.reps)&&o.reps.length) h+=`<div class="muted" style="margin-top:6px">${o.reps.map(r=>`Rep ${r.n}: ${r.valid===false?'✕ 무효':'RPE '+r.rpe}${r.note?' — '+escapeHtml(r.note):''}`).join('<br>')}</div>`;
   if(o.sticking_point) h+=`<div style="margin-top:6px"><b>스티킹:</b> ${escapeHtml(o.sticking_point)}</div>`;
@@ -1014,7 +1252,9 @@ function drawRecText(W,H){
     recCtx.fillStyle='rgba(0,0,0,0.6)';recCtx.fillRect(bx,pad,w,lines.length*fs*1.25+pad);
     lines.forEach((l,i)=>{recCtx.fillStyle=cols[i];recCtx.fillText(l,bx+pad,pad+pad/2+i*fs*1.25);});};
   box(pad,L,['#e06c00','#00e5c8']);
-  if(reps.length){const r=reps[reps.length-1];box(-1,[`Rep ${r.n}`,`RPE ${r.rpe.toFixed(1)}`,`${r.mcv.toFixed(2)} m/s`],['#f0f0f0',r.rpe>=9?'#e05555':r.rpe>=8?'#ffc107':'#00e5c8','#a0a0a0']);}
+  const fl=seg&&seg.fails.length?seg.fails[seg.fails.length-1]:null;
+  if(fl&&(!reps.length||fl.tPeak>reps[reps.length-1].tEnd)){box(-1,[fl.final?'✕ FAIL':'FAIL?',`${fl.pct}% ROM`],['#e05555','#a0a0a0']);}
+  else if(reps.length){const r=reps[reps.length-1];box(-1,[`Rep ${r.n}`,`RPE ${r.rpe.toFixed(1)}`,`${r.mcv.toFixed(2)} m/s`],['#f0f0f0',r.rpe>=9?'#e05555':r.rpe>=8?'#ffc107':'#00e5c8','#a0a0a0']);}
   recCtx.restore();
 }
 function stopRec(){
@@ -1041,6 +1281,7 @@ $('#camera-wrap').addEventListener('pointerdown',ev=>{
   tracker.init(G,WW,WH,p.x*k,p.y*k); trail=[];
   if(keepR) tracker.setRadius(keepR);          // keep scale stable mid-set
   stab.init(G,WW,WH,tracker.cx,tracker.cy,tracker.r);
+  FUS.reset();
   if(active&&seg&&seg.Y.length){                // continue height from last known value
     let lastY=0; for(let i=seg.Y.length-1;i>=0;i--) if(seg.ok[i]){lastY=seg.Y[i];break;}
     y0=tracker.cy+lastY/metersPerPx();
@@ -1070,7 +1311,7 @@ document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>{
 // settings
 function applyCfgToUI(){
   $('#s-ai').checked=cfg.ai; $('#s-worker').value=cfg.worker; $('#s-plate').value=cfg.plate; $('#s-rec').checked=cfg.rec;
-  $('#s-stopsec').value=cfg.stopSec; $('#s-wake').checked=cfg.wake; $('#s-debug').checked=cfg.debug;
+  $('#s-stopsec').value=cfg.stopSec; $('#s-wake').checked=cfg.wake; $('#s-debug').checked=cfg.debug; $('#s-pose').checked=cfg.pose;
   $('#debug-box').style.display=cfg.debug?'block':'none'; updateCalibInfo();
 }
 const saveCfg=()=>{store.set('cfg',cfg);updateTargetUI();$('#debug-box').style.display=cfg.debug?'block':'none';};
@@ -1084,6 +1325,7 @@ $('#s-rec').onchange=e=>{cfg.rec=e.target.checked;saveCfg();};
 $('#s-stopsec').onchange=e=>{cfg.stopSec=Math.max(3,Math.min(30,+e.target.value||7));saveCfg();};
 $('#s-wake').onchange=e=>{cfg.wake=e.target.checked;saveCfg();};
 $('#s-debug').onchange=e=>{cfg.debug=e.target.checked;saveCfg();};
+$('#s-pose').onchange=e=>{cfg.pose=e.target.checked;saveCfg();if(cfg.pose)loadPose();else POSE.cur=null;};
 $('#s-calib-reset').onclick=()=>{calib={};store.set('calib',calib);updateCalibInfo();toast('보정 데이터 초기화');};
 $('#s-test').onclick=async()=>{
   cfg.worker=$('#s-worker').value.trim();saveCfg();
@@ -1096,7 +1338,7 @@ $('#s-test').onclick=async()=>{
 // ── Boot ─────────────────────────────────────────────────
 (async()=>{
   applyCfgToUI(); renderSets(); updateTargetUI();
-  try{ await startCamera(); $('#loading-screen').style.display='none'; scheduleFrame(); }
+  try{ await startCamera(); $('#loading-screen').style.display='none'; scheduleFrame(); loadPose(); }
   catch(e){ $('#load-status').textContent='카메라를 열 수 없어요: '+e.message; }
 })();
 </script>
