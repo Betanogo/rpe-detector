@@ -10,16 +10,16 @@
 <link rel="apple-touch-icon" href="tl2-icon-192.png"/>
 <title>TATELIFT — RPE Tracker v2</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0d0d0d;--s1:#141414;--s2:#1c1c1c;--s3:#242424;
   --border:rgba(255,255,255,0.08);--text:#f0f0f0;--text2:#a0a0a0;--text3:#5a5a5a;
   --acc:#e06c00;--danger:#e05555;--teal:#00e5c8;--yellow:#ffc107;
-  --fb:'Space Grotesk',sans-serif;--fm:'Space Mono',monospace;
+  --fb:'Inter',system-ui,sans-serif;--fm:'Inter',system-ui,sans-serif;
   --sb:env(safe-area-inset-bottom,0px);
 }
-html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-family:var(--fb);overflow:hidden;-webkit-font-smoothing:antialiased;}
+html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-family:var(--fb);font-variant-numeric:tabular-nums;overflow:hidden;-webkit-font-smoothing:antialiased;}
 button{font-family:inherit;}
 #app{display:grid;grid-template-rows:auto 1fr auto;height:100dvh;width:100%;overflow:hidden;}
 
@@ -180,7 +180,7 @@ table.t td:first-child{color:var(--text3);}
     <div class="cam-off-screen" id="cam-off-screen"><div style="font-size:40px;opacity:.3">📷</div><div class="label">Camera is off</div></div>
     <div id="track-chip"><div class="tv" id="track-label">NO TARGET</div><div class="tl" id="track-sub">Plate tracking</div></div>
     <div id="phase-badge">Ready</div>
-    <div id="tap-hint">바벨 플레이트를 탭하세요<small>측면 촬영 · 카메라 고정 · 가장 큰 원판</small></div>
+    <div id="tap-hint">바벨 플레이트를 탭하세요<small>옆(측면)에서 촬영 · 정면 X · 카메라 고정 · 원판 전체가 보이게</small></div>
     <div id="debug-box"></div>
     <div id="toast"></div>
     <div id="countdown-overlay"><div id="countdown-num">3</div><div id="countdown-label">Get into position…</div></div>
@@ -930,7 +930,7 @@ function startRec(){
 }
 function drawRecText(W,H){
   const reps=seg?seg.reps:[], fs=Math.max(16,Math.round(Math.min(W,H)*0.045)), pad=Math.round(fs*0.6);
-  recCtx.save(); recCtx.font=`700 ${fs}px 'Space Mono',monospace`; recCtx.textBaseline='top';
+  recCtx.save(); recCtx.font=`700 ${fs}px Inter,system-ui,sans-serif`; recCtx.textBaseline='top';
   const avg=reps.length?(reps.reduce((s,r)=>s+r.rpe,0)/reps.length).toFixed(1):'—';
   const L=[`${LIFTS[curLift].label}${weightKg?' '+weightKg+weightUnit:''}`,`Avg RPE ${avg}`];
   const box=(x,lines,cols)=>{const w=Math.max(...lines.map(l=>recCtx.measureText(l).width))+pad*2;const bx=x<0?W-pad-w:x;
