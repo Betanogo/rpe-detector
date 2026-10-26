@@ -4,38 +4,136 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
 <meta name="theme-color" content="#0d0d0d"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<title>TATELIFT — RPE Tracker</title>
-<script src="coi-serviceworker.min.js"></script>
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+<meta name="mobile-web-app-capable" content="yes"/>
+<title>TATELIFT — RPE Tracker v2</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0d0d0d;--s1:#141414;--s2:#1c1c1c;--s3:#242424;
-  --border:rgba(255,255,255,0.08);--text:#f0f0f0;--text2:#a0a0a0;--text3:#505050;
-  --acc:#e06c00;--danger:#e05555;--teal:#00e5c8;
+  --border:rgba(255,255,255,0.08);--text:#f0f0f0;--text2:#a0a0a0;--text3:#5a5a5a;
+  --acc:#e06c00;--danger:#e05555;--teal:#00e5c8;--yellow:#ffc107;
   --fb:'Space Grotesk',sans-serif;--fm:'Space Mono',monospace;
   --sb:env(safe-area-inset-bottom,0px);
 }
 html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-family:var(--fb);overflow:hidden;-webkit-font-smoothing:antialiased;}
+button{font-family:inherit;}
 #app{display:grid;grid-template-rows:auto 1fr auto;height:100dvh;width:100%;overflow:hidden;}
 
 /* TOPBAR */
-#topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg);}
+#topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);}
 #nav-logo{font-family:var(--fm);font-size:16px;font-weight:700;color:var(--acc);flex-shrink:0;}
 #exercise-select{flex:1;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fb);font-size:13px;font-weight:600;padding:7px 10px;outline:none;}
 #exercise-select option{background:var(--s2);}
-#btn-settings{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-#btn-settings.active{color:var(--acc);border-color:var(--acc);}
+.icon-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.icon-btn.active{color:var(--acc);border-color:var(--acc);}
+
+/* CAMERA */
+#camera-wrap{position:relative;background:#000;overflow:hidden;width:100%;touch-action:none;}
+#video,#overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;}
+#overlay{pointer-events:none;}
+.cam-off-screen{position:absolute;inset:0;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:2;}
+.cam-off-screen.visible{display:flex;}
+.cam-off-screen .label{font-size:12px;color:var(--text3);}
+
+#phase-badge{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-family:var(--fm);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 14px;border-radius:6px;background:rgba(13,13,13,0.75);border:1px solid var(--border);color:var(--text3);pointer-events:none;z-index:4;}
+#phase-badge.down{color:var(--yellow);border-color:var(--yellow);}
+#phase-badge.bottom{color:var(--acc);border-color:var(--acc);}
+#phase-badge.up{color:var(--teal);border-color:var(--teal);}
+#phase-badge.lost{color:var(--danger);border-color:var(--danger);}
+
+#track-chip{position:absolute;top:12px;left:12px;background:rgba(13,13,13,0.75);border:1px solid var(--border);border-radius:6px;padding:5px 9px;pointer-events:none;z-index:4;}
+#track-chip .tv{font-family:var(--fm);font-size:12px;font-weight:700;color:var(--teal);}
+#track-chip .tl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:1px;}
+
+#tap-hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);background:rgba(13,13,13,0.8);border:1px dashed var(--acc);color:var(--text);font-size:13px;font-weight:600;padding:12px 18px;border-radius:10px;text-align:center;pointer-events:none;z-index:4;line-height:1.6;}
+#tap-hint small{display:block;color:var(--text2);font-weight:400;font-size:11px;}
+
+#radius-ctl{position:absolute;right:12px;bottom:12px;display:none;gap:6px;z-index:5;}
+#radius-ctl.visible{display:flex;}
+#radius-ctl button{width:40px;height:40px;border-radius:50%;background:rgba(13,13,13,0.8);border:2px solid var(--border);color:var(--text);font-size:18px;font-weight:700;cursor:pointer;}
+
+#countdown-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.7);pointer-events:none;opacity:0;transition:opacity .3s;z-index:6;}
+#countdown-overlay.visible{opacity:1;}
+#countdown-num{font-family:var(--fm);font-weight:700;font-size:110px;line-height:1;color:var(--acc);}
+#countdown-label{font-size:14px;color:var(--text2);margin-top:8px;letter-spacing:.1em;}
+
+#autostop-ring{position:absolute;bottom:66px;right:14px;width:36px;height:36px;pointer-events:none;display:none;z-index:5;}
+#autostop-ring.visible{display:block;}
+
+#cam-controls{position:absolute;bottom:12px;left:14px;display:flex;gap:10px;z-index:5;transition:opacity .2s;}
+.cam-fab{width:44px;height:44px;border-radius:50%;background:rgba(13,13,13,0.75);border:2px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.cam-fab.off{background:var(--s3);color:var(--text3);}
+
+#toast{position:absolute;bottom:70px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--s3);color:var(--text);font-size:12px;font-weight:600;padding:9px 18px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:10;max-width:92%;overflow:hidden;text-overflow:ellipsis;}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
+
+#debug-box{position:absolute;top:50px;right:10px;background:rgba(0,0,0,.8);color:#ddd;font-family:var(--fm);font-size:10px;line-height:1.5;padding:6px 8px;border-radius:6px;pointer-events:none;z-index:7;display:none;white-space:pre;}
+
+/* PANEL */
+#panel{background:var(--s1);border-top:1px solid var(--border);padding:clamp(6px,1.5vh,10px) 14px calc(clamp(6px,1.5vh,10px) + var(--sb));display:flex;flex-direction:column;gap:clamp(4px,1vh,8px);overflow:hidden;}
+.row{display:flex;gap:8px;align-items:center;}
+#weight-in{flex:1;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fm);font-size:14px;font-weight:600;padding:8px 10px;outline:none;}
+#weight-in:focus{border-color:var(--acc);}
+.unit-seg{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;flex-shrink:0;}
+.unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:8px 11px;cursor:pointer;}
+.unit-seg-btn.active{background:var(--acc);color:#000;font-weight:700;}
+#btn-start{background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--fm);font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+#btn-start.stopping{background:var(--danger);}
+#btn-start:disabled{opacity:.5;}
+
+#rpe-mini{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;min-width:0;}
+#rpe-mini-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
+#rpe-label{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);}
+#rpe-desc{font-size:10px;color:var(--text3);margin-right:6px;}
+#rpe-val{font-family:var(--fm);font-weight:700;font-size:16px;color:var(--acc);}
+#rpe-track{height:5px;background:var(--s3);border-radius:2px;overflow:hidden;}
+#rpe-fill{height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .6s,background .4s;}
+#btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:8px 12px;cursor:pointer;flex-shrink:0;}
+
+#metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;}
+.metric{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:clamp(4px,1vh,8px) 4px clamp(3px,.8vh,6px);text-align:center;}
+.metric-val{font-family:var(--fm);font-weight:700;font-size:clamp(14px,3.5vw,20px);line-height:1;}
+.metric-val.acc{color:var(--acc);} .metric-val.teal{color:var(--teal);} .metric-val.danger{color:var(--danger);}
+.metric-label{font-size:8px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px;}
+
+.tab-wrap{position:relative;}
+#tabs{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.tab-btn{flex:1;background:var(--s2);color:var(--text3);border:none;font-size:11px;font-weight:500;padding:6px;cursor:pointer;}
+.tab-btn.active{color:var(--acc);border-bottom:2px solid var(--acc);}
+.tab-pane{display:none;} .tab-pane.visible{display:block;}
+.hist-wrap{max-height:clamp(56px,10vh,96px);overflow-y:auto;border:1px solid var(--border);border-radius:6px;}
+table.t{width:100%;border-collapse:collapse;font-family:var(--fm);font-size:11px;}
+table.t th{position:sticky;top:0;background:var(--s2);color:var(--text3);font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-family:var(--fb);font-weight:600;padding:5px 7px;text-align:right;border-bottom:1px solid var(--border);}
+table.t th:first-child,table.t td:first-child{text-align:left;}
+table.t td{padding:4px 7px;text-align:right;border-bottom:1px solid rgba(255,255,255,.04);}
+table.t td:first-child{color:var(--text3);}
+.rpe-high{color:var(--danger)!important;} .rpe-med{color:var(--yellow)!important;} .rpe-ok{color:var(--teal)!important;}
+
+/* SHEETS */
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;display:none;}
+.sheet-bg.open{display:block;}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:88dvh;overflow-y:auto;background:var(--s1);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:18px 16px calc(18px + var(--sb));}
+.sheet h2{font-family:var(--fm);font-size:14px;color:var(--acc);letter-spacing:.06em;margin-bottom:12px;}
+.sheet .sec{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin:14px 0 6px;}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.kv div{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 6px;text-align:center;}
+.kv b{display:block;font-family:var(--fm);font-size:18px;}
+.kv span{font-size:9px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;}
+.ai-box{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6;color:var(--text);}
+.ai-box .muted{color:var(--text2);font-size:12px;}
+.ai-box ul{padding-left:18px;}
+.chips{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{background:var(--s2);border:1px solid var(--border);color:var(--text);font-family:var(--fm);font-size:13px;padding:8px 11px;border-radius:8px;cursor:pointer;}
+.chip.sel{background:var(--acc);color:#000;border-color:var(--acc);}
+.btn-wide{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-family:var(--fm);font-size:13px;padding:12px;cursor:pointer;margin-top:14px;}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* SETTINGS */
-#settings-drawer{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);}
-#settings-drawer.open{display:block;}
-#settings-panel{position:absolute;top:0;right:0;bottom:0;width:min(300px,85vw);background:var(--s1);border-left:1px solid var(--border);display:flex;flex-direction:column;padding:20px 18px;overflow-y:auto;}
-.settings-title{font-family:var(--fm);font-size:13px;font-weight:700;color:var(--acc);letter-spacing:.1em;margin-bottom:20px;}
-.setting-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--border);}
-.setting-label{font-size:13px;font-weight:600;color:var(--text);}
+#settings-panel{position:absolute;top:0;right:0;bottom:0;width:min(320px,88vw);background:var(--s1);border-left:1px solid var(--border);padding:20px 18px;overflow-y:auto;}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);}
+.setting-label{font-size:13px;font-weight:600;}
 .setting-desc{font-size:11px;color:var(--text3);margin-top:3px;}
 .toggle{position:relative;width:44px;height:26px;flex-shrink:0;}
 .toggle input{opacity:0;width:0;height:0;}
@@ -43,1120 +141,883 @@ html,body{height:100%;width:100%;background:var(--bg);color:var(--text);font-fam
 .toggle-slider::before{content:'';position:absolute;width:20px;height:20px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform .2s;}
 .toggle input:checked+.toggle-slider{background:var(--acc);}
 .toggle input:checked+.toggle-slider::before{transform:translateX(18px);}
-.num-input{width:52px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--fm);font-size:14px;font-weight:700;padding:4px 6px;text-align:center;outline:none;}
+.num-input,.txt-input{background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--fm);font-size:13px;padding:6px 8px;outline:none;}
+.num-input{width:60px;text-align:center;}
+.txt-input{width:100%;margin-top:8px;font-size:11px;}
 
-/* CAMERA */
-#camera-wrap{position:relative;background:#000;overflow:hidden;width:100%;}
-#video{width:100%;height:100%;object-fit:cover;display:block;}
-#overlay{position:absolute;inset:0;pointer-events:none;}
-#rec-canvas{display:none;}
-.cam-off-screen{position:absolute;inset:0;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:2;}
-.cam-off-screen.visible{display:flex;}
-.cam-off-screen .icon{font-size:40px;opacity:.3;}
-.cam-off-screen .label{font-size:12px;color:var(--text3);}
-
-/* PHASE BADGE */
-#phase-badge{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-family:var(--fm);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 14px;border-radius:6px;background:rgba(13,13,13,0.75);border:1px solid var(--border);color:var(--text3);backdrop-filter:blur(6px);pointer-events:none;transition:color .15s,border-color .15s;}
-#phase-badge.descending{color:#ffc107;border-color:#ffc107;}
-#phase-badge.bottom{color:var(--acc);border-color:var(--acc);}
-#phase-badge.ascending{color:var(--teal);border-color:var(--teal);}
-
-/* TRACK CHIP */
-#track-chip{position:absolute;top:12px;left:12px;background:rgba(13,13,13,0.75);border:1px solid var(--border);border-radius:6px;padding:5px 9px;backdrop-filter:blur(6px);pointer-events:none;}
-#track-chip .tv{font-family:var(--fm);font-size:12px;font-weight:700;color:var(--teal);}
-#track-chip .tl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:1px;}
-
-/* COUNTDOWN */
-#countdown-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);pointer-events:none;opacity:0;transition:opacity .3s;z-index:5;}
-#countdown-overlay.visible{opacity:1;}
-#countdown-num{font-family:var(--fm);font-weight:700;font-size:110px;line-height:1;color:var(--acc);animation:pulse 1s ease-in-out infinite;}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
-#countdown-label{font-size:14px;color:var(--text2);margin-top:8px;letter-spacing:.1em;}
-
-/* AUTO-STOP RING */
-#autostop-ring{position:absolute;bottom:66px;right:14px;width:36px;height:36px;pointer-events:none;display:none;}
-#autostop-ring.visible{display:block;}
-
-/* CAM CONTROLS */
-#cam-controls{position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:flex-start;gap:10px;padding:0 14px;pointer-events:none;z-index:3;}
-#cam-controls button{pointer-events:all;}
-.cam-fab{width:44px;height:44px;border-radius:50%;background:rgba(13,13,13,0.75);border:2px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);transition:all .2s;}
-#btn-cam-off.off{background:var(--s3);border-color:var(--text3);color:var(--text3);}
-
-/* TOAST — inside camera */
-#toast{position:absolute;bottom:70px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--s3);color:var(--text);font-size:12px;font-weight:600;padding:9px 18px;border-radius:50px;border:1px solid var(--border);opacity:0;transition:transform .25s,opacity .25s;white-space:nowrap;pointer-events:none;z-index:10;}
-#toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
-
-/* PANEL */
-#panel{background:var(--s1);border-top:1px solid var(--border);padding:clamp(6px,1.5vh,10px) 14px calc(clamp(6px,1.5vh,10px) + var(--sb));display:flex;flex-direction:column;gap:clamp(4px,1vh,8px);overflow:hidden;width:100%;}
-
-/* WEIGHT + START */
-#weight-start-row{display:flex;gap:8px;align-items:center;width:100%;overflow:hidden;}
-#weight-in{flex:1;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--fm);font-size:14px;font-weight:600;padding:8px 10px;outline:none;transition:border-color .2s;}
-#weight-in:focus{border-color:var(--acc);}
-#weight-in::placeholder{color:var(--text3);}
-.unit-seg{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;flex-shrink:0;}
-.unit-seg-btn{background:var(--s2);color:var(--text3);border:none;font-family:var(--fm);font-size:12px;padding:8px 11px;cursor:pointer;}
-.unit-seg-btn.active{background:var(--acc);color:#000;font-weight:700;}
-#btn-start{background:var(--acc);color:#000;border:none;border-radius:8px;font-family:var(--fm);font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:opacity .15s;}
-#btn-start.stopping{background:var(--danger);}
-
-/* RPE + RESET */
-#rpe-reset-row{display:flex;gap:8px;align-items:center;}
-#rpe-mini{flex:1;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;min-width:0;}
-#rpe-mini-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
-#rpe-label{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);}
-#rpe-right{display:flex;align-items:baseline;gap:6px;}
-#rpe-desc{font-size:10px;color:var(--text3);}
-#rpe-val{font-family:var(--fm);font-weight:700;font-size:16px;color:var(--acc);}
-#rpe-track{height:5px;background:var(--s3);border-radius:2px;overflow:hidden;}
-#rpe-fill{height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .6s,background .4s;}
-#btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:8px 12px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
-
-/* METRICS */
-#metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;width:100%;}
-.metric{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:clamp(4px,1vh,8px) 4px clamp(3px,.8vh,6px);text-align:center;}
-.metric-val{font-family:var(--fm);font-weight:700;font-size:clamp(14px,3.5vw,20px);line-height:1;color:var(--text);}
-.metric-val.acc{color:var(--acc);}
-.metric-val.teal{color:var(--teal);}
-.metric-val.danger{color:var(--danger);}
-.metric-label{font-size:8px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px;}
-
-/* TABS */
-.tab-wrap{position:relative;}
-#tabs{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
-.tab-btn{flex:1;background:var(--s2);color:var(--text3);border:none;font-family:var(--fb);font-size:11px;font-weight:500;padding:6px;cursor:pointer;}
-.tab-btn.active{color:var(--acc);border-bottom:2px solid var(--acc);}
-#tab-current,#tab-sets{display:none;}
-#tab-current.visible,#tab-sets.visible{display:block;}
-#btn-expand{position:absolute;top:5px;right:6px;width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--s3);color:var(--text3);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
-
-/* REP TABLE */
-#history-wrap{max-height:clamp(56px,9vh,90px);overflow-y:auto;border:1px solid var(--border);border-radius:6px;scrollbar-width:thin;}
-#rep-table{width:100%;border-collapse:collapse;font-family:var(--fm);font-size:11px;}
-#rep-table thead th{position:sticky;top:0;background:var(--s2);color:var(--text3);font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-family:var(--fb);font-weight:600;padding:5px 7px;text-align:right;border-bottom:1px solid var(--border);}
-#rep-table thead th:first-child{text-align:left;}
-#rep-table tbody td{padding:4px 7px;text-align:right;color:var(--text);border-bottom:1px solid rgba(255,255,255,.04);}
-#rep-table tbody td:first-child{text-align:left;color:var(--text3);}
-.rpe-high{color:var(--danger)!important;}
-.rpe-med{color:#ffc107!important;}
-.rpe-ok{color:var(--teal)!important;}
-
-/* LOADING */
 #loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:100;}
 .load-logo{font-family:var(--fm);font-weight:700;font-size:36px;color:var(--acc);}
-.spinner{width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg)}}
-.load-status{font-size:12px;color:var(--text3);font-family:var(--fm);}
-
-/* ANALYZER */
-#analyzer-overlay{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .35s cubic-bezier(0.16,1,0.3,1);}
-#analyzer-overlay.open{transform:translateY(0);}
-#analyzer-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;}
-#analyzer-title{font-family:var(--fm);font-size:15px;font-weight:700;color:var(--text);}
-#analyzer-close{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
-#analyzer-body{flex:1;overflow-y:auto;padding:16px;}
+#load-status{font-size:12px;color:var(--text3);font-family:var(--fm);text-align:center;padding:0 20px;}
 </style>
 </head>
 <body>
 
 <div id="loading-screen">
   <div class="load-logo">TATELIFT</div>
-  <div class="spinner"></div>
-  <div class="load-status" id="load-status">Loading MediaPipe…</div>
-</div>
-
-<!-- Settings -->
-<div id="settings-drawer">
-  <div id="settings-panel">
-    <div class="settings-title">⚙ SETTINGS</div>
-    <div class="setting-row">
-      <div><div class="setting-label">Auto-Record</div><div class="setting-desc">세트 시작/종료 시 자동 녹화</div></div>
-      <label class="toggle"><input type="checkbox" id="tog-record" checked/><span class="toggle-slider"></span></label>
-    </div>
-    <div class="setting-row">
-      <div><div class="setting-label">Wake Lock</div><div class="setting-desc">화면 꺼짐 방지</div></div>
-      <label class="toggle"><input type="checkbox" id="tog-wakelock" checked/><span class="toggle-slider"></span></label>
-    </div>
-    <div class="setting-row" style="border:none;">
-      <div><div class="setting-label">자동 세트 종료</div><div class="setting-desc">X초 움직임 없으면 자동 저장</div></div>
-      <label class="toggle"><input type="checkbox" id="tog-autostop" checked/><span class="toggle-slider"></span></label>
-    </div>
-    <div style="padding:8px 0 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
-      <span style="font-size:12px;color:var(--text3);">정지 판정</span>
-      <input type="number" class="num-input" id="autostop-sec" value="7" min="2" max="30"/>
-      <span style="font-size:12px;color:var(--text3);">초</span>
-    </div>
-    <div class="setting-row" style="border:none;">
-      <div><div class="setting-label">Red Band Tracking</div><div class="setting-desc">빨간 밴드/플레이트 보조 트래킹</div></div>
-      <label class="toggle"><input type="checkbox" id="tog-band"/><span class="toggle-slider"></span></label>
-    </div>
-    <div style="margin-top:auto;padding-top:24px;">
-      <button id="settings-close-btn" style="width:100%;background:var(--s2);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-family:var(--fm);font-size:13px;padding:12px;cursor:pointer;">Close</button>
-    </div>
-  </div>
+  <div class="spinner" style="width:22px;height:22px;margin:0"></div>
+  <div id="load-status">카메라 준비 중…</div>
 </div>
 
 <div id="app">
   <header id="topbar">
     <div id="nav-logo">RPE</div>
     <select id="exercise-select">
-      <option value="SQ">Squat</option>
       <option value="BP">Bench Press</option>
+      <option value="SQ">Squat</option>
       <option value="DL">Deadlift</option>
       <option value="OHP">OHP</option>
       <option value="RDL">RDL</option>
     </select>
-    <button id="btn-settings">⚙</button>
+    <button class="icon-btn" id="btn-settings" title="Settings">⚙</button>
   </header>
 
   <div id="camera-wrap">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="overlay"></canvas>
-    <canvas id="rec-canvas"></canvas>
-    <div class="cam-off-screen" id="cam-off-screen">
-      <div class="icon">📷</div><div class="label">Camera is off</div>
-    </div>
-    <div id="toast"></div>
+    <div class="cam-off-screen" id="cam-off-screen"><div style="font-size:40px;opacity:.3">📷</div><div class="label">Camera is off</div></div>
+    <div id="track-chip"><div class="tv" id="track-label">NO TARGET</div><div class="tl" id="track-sub">Plate tracking</div></div>
     <div id="phase-badge">Ready</div>
-    <div id="track-chip">
-      <div class="tv" id="track-label">HEAD</div>
-      <div class="tl">Tracking</div>
-    </div>
-    <div id="countdown-overlay">
-      <div id="countdown-num">3</div>
-      <div id="countdown-label">Get into position…</div>
-    </div>
+    <div id="tap-hint">바벨 플레이트를 탭하세요<small>측면 촬영 · 카메라 고정 · 가장 큰 원판</small></div>
+    <div id="debug-box"></div>
+    <div id="toast"></div>
+    <div id="countdown-overlay"><div id="countdown-num">3</div><div id="countdown-label">Get into position…</div></div>
     <svg id="autostop-ring" viewBox="0 0 36 36">
       <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3"/>
-      <circle id="autostop-arc" cx="18" cy="18" r="15" fill="none" stroke="#e05555" stroke-width="3"
-        stroke-dasharray="94.2" stroke-dashoffset="94.2" stroke-linecap="round" transform="rotate(-90 18 18)"/>
+      <circle id="autostop-arc" cx="18" cy="18" r="15" fill="none" stroke="#e05555" stroke-width="3" stroke-dasharray="94.2" stroke-dashoffset="94.2" stroke-linecap="round" transform="rotate(-90 18 18)"/>
     </svg>
+    <div id="radius-ctl"><button id="r-minus" aria-label="smaller">−</button><button id="r-plus" aria-label="bigger">+</button></div>
     <div id="cam-controls">
-      <button class="cam-fab" id="btn-cam-off">📷</button>
-      <button class="cam-fab" id="btn-cam-flip">⟳</button>
+      <button class="cam-fab" id="btn-cam-off" aria-label="Camera on/off">📷</button>
+      <button class="cam-fab" id="btn-cam-flip" aria-label="Flip camera">⟳</button>
     </div>
   </div>
 
   <section id="panel">
-    <div id="weight-start-row">
-      <input type="number" id="weight-in" placeholder="Weight (kg)" step="0.5"/>
-      <div class="unit-seg">
-        <button class="unit-seg-btn active" data-unit="kg">kg</button>
-        <button class="unit-seg-btn" data-unit="lb">lb</button>
-      </div>
+    <div class="row">
+      <input type="number" id="weight-in" placeholder="Weight (kg)" step="0.5" inputmode="decimal"/>
+      <div class="unit-seg"><button class="unit-seg-btn active" data-unit="kg">kg</button><button class="unit-seg-btn" data-unit="lb">lb</button></div>
       <button id="btn-start">▶ Start</button>
     </div>
-    <div id="rpe-reset-row">
+    <div class="row">
       <div id="rpe-mini">
-        <div id="rpe-mini-header">
-          <span id="rpe-label">RPE Estimate</span>
-          <div id="rpe-right"><span id="rpe-desc">—</span><span id="rpe-val">—</span></div>
-        </div>
+        <div id="rpe-mini-header"><span id="rpe-label">RPE Estimate</span><span><span id="rpe-desc">—</span><span id="rpe-val">—</span></span></div>
         <div id="rpe-track"><div id="rpe-fill"></div></div>
       </div>
       <button id="btn-reset">Reset</button>
     </div>
     <div id="metrics">
       <div class="metric"><div class="metric-val acc" id="m-reps">0</div><div class="metric-label">Reps</div></div>
-      <div class="metric"><div class="metric-val" id="m-time">—</div><div class="metric-label">Time(s)</div></div>
-      <div class="metric"><div class="metric-val teal" id="m-avgrpe">—</div><div class="metric-label">Avg RPE</div></div>
-      <div class="metric"><div class="metric-val" id="m-mean">—</div><div class="metric-label">Avg(s)</div></div>
+      <div class="metric"><div class="metric-val teal" id="m-mcv">—</div><div class="metric-label">MCV m/s</div></div>
+      <div class="metric"><div class="metric-val" id="m-loss">—</div><div class="metric-label">V-Loss</div></div>
+      <div class="metric"><div class="metric-val" id="m-avg">—</div><div class="metric-label">Avg RPE</div></div>
     </div>
     <div class="tab-wrap">
-      <div id="tabs">
-        <button class="tab-btn active" data-tab="current">This Set</button>
-        <button class="tab-btn" data-tab="sets">All Sets</button>
-      </div>
-      <button id="btn-expand">⤢</button>
+      <div id="tabs"><button class="tab-btn active" data-tab="cur">This Set</button><button class="tab-btn" data-tab="sets">All Sets</button></div>
     </div>
-    <div id="tab-current" class="visible">
-      <div id="history-wrap">
-        <table id="rep-table">
-          <thead><tr><th>Rep</th><th>Time(s)</th><th>RPE</th></tr></thead>
-          <tbody id="rep-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-    <div id="tab-sets">
-      <div id="history-wrap" style="max-height:clamp(56px,9vh,90px)">
-        <table id="rep-table">
-          <thead><tr><th>Set</th><th>Ex</th><th>Reps</th><th>RPE</th><th>Wt</th></tr></thead>
-          <tbody id="sets-tbody"></tbody>
-        </table>
-      </div>
-    </div>
+    <div class="tab-pane visible" id="tab-cur"><div class="hist-wrap"><table class="t"><thead><tr><th>Rep</th><th>MCV</th><th>Up(s)</th><th>Total(s)</th><th>RPE</th></tr></thead><tbody id="rep-tbody"></tbody></table></div></div>
+    <div class="tab-pane" id="tab-sets"><div class="hist-wrap"><table class="t"><thead><tr><th>Set</th><th>Ex</th><th>Wt</th><th>Reps</th><th>RPE</th><th>AI</th><th>You</th></tr></thead><tbody id="sets-tbody"></tbody></table></div></div>
   </section>
 </div>
 
-<!-- Analyzer -->
-<div id="analyzer-overlay">
-  <div id="analyzer-header">
-    <div id="analyzer-title">Set Analyzer</div>
-    <button id="analyzer-close">✕</button>
-  </div>
-  <div id="analyzer-body">
-    <div style="margin-bottom:16px">
-      <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Current Set</div>
-      <div id="analyzer-metrics" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
-      <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Rep by Rep</div>
-      <table style="width:100%;border-collapse:collapse;font-family:var(--fm);font-size:12px;">
-        <thead><tr>
-          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Rep</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Time(s)</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">RPE</th>
-        </tr></thead>
-        <tbody id="analyzer-reps"></tbody>
-      </table>
+<!-- Post-set sheet -->
+<div class="sheet-bg" id="result-bg">
+  <div class="sheet">
+    <h2 id="res-title">SET RESULT</h2>
+    <div class="kv">
+      <div><b id="res-reps">—</b><span>Reps</span></div>
+      <div><b id="res-trk" style="color:var(--acc)">—</b><span>Tracker RPE</span></div>
+      <div><b id="res-ai" style="color:var(--teal)">—</b><span>AI RPE</span></div>
     </div>
-    <div>
-      <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">All Sets</div>
-      <table style="width:100%;border-collapse:collapse;font-family:var(--fm);font-size:12px;">
-        <thead><tr>
-          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Set</th>
-          <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Ex</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Reps</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">RPE</th>
-          <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;">Wt</th>
-        </tr></thead>
-        <tbody id="analyzer-sets"></tbody>
-      </table>
-    </div>
+    <div class="sec">Reps</div>
+    <div class="hist-wrap" style="max-height:150px"><table class="t"><thead><tr><th>Rep</th><th>MCV</th><th>Down</th><th>Pause</th><th>Up</th><th>RPE</th></tr></thead><tbody id="res-reps-body"></tbody></table></div>
+    <div class="sec">AI 분석</div>
+    <div class="ai-box" id="res-ai-box"><span class="muted">—</span></div>
+    <div class="sec">실제 체감 RPE는? (트래커가 학습해요)</div>
+    <div class="chips" id="res-chips"></div>
+    <button class="btn-wide" id="res-close">닫기</button>
   </div>
 </div>
 
-<script type="module">
-import { PoseLandmarker, FilesetResolver, DrawingUtils }
-  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/+esm';
+<!-- Settings -->
+<div class="sheet-bg" id="settings-bg">
+  <div id="settings-panel">
+    <div style="font-family:var(--fm);font-size:13px;font-weight:700;color:var(--acc);letter-spacing:.1em;margin-bottom:12px;">⚙ SETTINGS</div>
 
-// ── Landmarks ─────────────────────────────────────────────
-const LM={NOSE:0,L_SHOULDER:11,R_SHOULDER:12,L_ELBOW:13,R_ELBOW:14,L_WRIST:15,R_WRIST:16,L_INDEX:19,R_INDEX:20,L_HIP:23,R_HIP:24};
+    <div class="setting-row"><div><div class="setting-label">AI 세트 분석</div><div class="setting-desc">세트 후 Claude가 RPE·스티킹 포인트 판단</div></div><label class="toggle"><input type="checkbox" id="s-ai"/><span class="toggle-slider"></span></label></div>
+    <div style="padding:0 0 12px;border-bottom:1px solid var(--border);">
+      <div class="setting-desc">Cloudflare Worker URL</div>
+      <input class="txt-input" id="s-worker" placeholder="https://tatelift-ai.xxxx.workers.dev" autocomplete="off" spellcheck="false"/>
+      <button class="btn-wide" id="s-test" style="margin-top:8px;padding:8px;">연결 테스트</button>
+    </div>
 
-// ── Exercise config ───────────────────────────────────────
-// landmarks: what to track for PRIMARY Y signal
-// All pose-based, no hand model needed (simpler + more reliable)
-const EX={
-  SQ: {label:'Squat',   lm:[LM.NOSE,LM.L_SHOULDER,LM.R_SHOULDER,LM.L_HIP,LM.R_HIP,LM.L_WRIST,LM.R_WRIST,LM.L_INDEX,LM.R_INDEX], trackName:'FULL BODY'},
-  BP: {label:'Bench',   lm:[LM.L_INDEX,LM.R_INDEX,LM.L_WRIST,LM.R_WRIST,LM.L_ELBOW,LM.R_ELBOW,LM.L_SHOULDER,LM.R_SHOULDER], trackName:'HAND+ELB+SHLD'},
-  DL: {label:'Deadlift',lm:[LM.NOSE,LM.L_SHOULDER,LM.R_SHOULDER,LM.L_HIP,LM.R_HIP,LM.L_WRIST,LM.R_WRIST,LM.L_INDEX,LM.R_INDEX], trackName:'FULL BODY'},
-  OHP:{label:'OHP',     lm:[LM.L_INDEX,LM.R_INDEX,LM.L_WRIST,LM.R_WRIST,LM.L_ELBOW,LM.R_ELBOW],                                   trackName:'HAND+ELB'},
-  RDL:{label:'RDL',     lm:[LM.L_WRIST,LM.R_WRIST,LM.L_INDEX,LM.R_INDEX],                                                          trackName:'HAND'},
+    <div class="setting-row"><div><div class="setting-label">플레이트 지름</div><div class="setting-desc">탭한 원판 지름 (25/20kg 범퍼·IPF = 45cm)</div></div><span><input type="number" class="num-input" id="s-plate" value="45" min="20" max="50" step="0.5"/> cm</span></div>
+    <div class="setting-row"><div><div class="setting-label">Auto-Record</div><div class="setting-desc">세트 시작/종료 시 자동 녹화</div></div><label class="toggle"><input type="checkbox" id="s-rec"/><span class="toggle-slider"></span></label></div>
+    <div class="setting-row"><div><div class="setting-label">자동 세트 종료</div><div class="setting-desc">마지막 렙 후 X초 정지 시 저장</div></div><span><input type="number" class="num-input" id="s-stopsec" value="7" min="3" max="30"/> 초</span></div>
+    <div class="setting-row"><div><div class="setting-label">Wake Lock</div><div class="setting-desc">화면 꺼짐 방지</div></div><label class="toggle"><input type="checkbox" id="s-wake" checked/><span class="toggle-slider"></span></label></div>
+    <div class="setting-row"><div><div class="setting-label">디버그 표시</div><div class="setting-desc">추적 점수·속도 숫자 표시</div></div><label class="toggle"><input type="checkbox" id="s-debug"/><span class="toggle-slider"></span></label></div>
+    <div class="setting-row" style="border:none"><div><div class="setting-label">개인 보정 데이터</div><div class="setting-desc" id="s-calib-info">—</div></div><button class="chip" id="s-calib-reset" style="font-size:11px">초기화</button></div>
+
+    <button class="btn-wide" id="settings-close">닫기</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =========================================================
+   TATELIFT v2 — plate tracker + velocity-based RPE + AI review
+   ========================================================= */
+
+// ── Lift config ──────────────────────────────────────────
+// minROM: minimum upward travel (m) to count a rep
+// refROM: typical range of motion the velocity table assumes
+// table: [mean concentric velocity m/s, RPE] — population defaults, personal calibration overrides
+// With roughly constant acceleration, mean velocity scales with sqrt(distance),
+// so velocity is normalised to refROM before lookup (short-ROM lifters aren't punished).
+const LIFTS={
+  BP: {label:'Bench',    minROM:0.12, refROM:0.35, table:[[0.17,10],[0.23,9],[0.30,8],[0.37,7],[0.45,6],[0.53,5],[0.62,4]]},
+  SQ: {label:'Squat',    minROM:0.20, refROM:0.55, table:[[0.29,10],[0.36,9],[0.43,8],[0.50,7],[0.58,6],[0.66,5],[0.75,4]]},
+  DL: {label:'Deadlift', minROM:0.20, refROM:0.55, table:[[0.21,10],[0.28,9],[0.36,8],[0.44,7],[0.52,6],[0.60,5],[0.68,4]]},
+  OHP:{label:'OHP',      minROM:0.20, refROM:0.50, table:[[0.19,10],[0.26,9],[0.33,8],[0.40,7],[0.48,6],[0.56,5],[0.64,4]]},
+  RDL:{label:'RDL',      minROM:0.15, refROM:0.45, table:[[0.28,10],[0.35,9],[0.42,8],[0.49,7],[0.57,6],[0.65,5],[0.73,4]]},
 };
+const RPE_LABEL=r=>r>=9.5?'Max':r>=9?'Near Max':r>=8.5?'Very Hard+':r>=8?'Very Hard':r>=7.5?'Hard':r>=7?'Somewhat Hard':r>=6?'Moderate':r>=5?'Light':'Warm-up';
 
-// ── RPE table (total rep duration) ────────────────────────
-const RPE_TABLE=[
-  {d:0.7,r:4.0,l:'Warm-up'},{d:0.9,r:4.5,l:'Very Light'},
-  {d:1.1,r:5.0,l:'Light'},{d:1.4,r:5.5,l:'Light-Moderate'},
-  {d:1.7,r:6.0,l:'Moderate'},{d:2.1,r:6.5,l:'Moderate+'},
-  {d:2.6,r:7.0,l:'Somewhat Hard'},{d:3.2,r:7.5,l:'Hard'},
-  {d:3.9,r:8.0,l:'Very Hard'},{d:4.8,r:8.5,l:'Very Hard+'},
-  {d:6.0,r:9.0,l:'Near Max'},{d:8.0,r:9.5,l:'Almost Max'},
-  {d:11,r:10,l:'Max/Fail'},
-];
-function rpeFromDur(dur){
-  if(dur<=RPE_TABLE[0].d) return RPE_TABLE[0];
-  if(dur>=RPE_TABLE[RPE_TABLE.length-1].d) return RPE_TABLE[RPE_TABLE.length-1];
-  for(let i=1;i<RPE_TABLE.length;i++){
-    if(dur<=RPE_TABLE[i].d){
-      const f=(dur-RPE_TABLE[i-1].d)/(RPE_TABLE[i].d-RPE_TABLE[i-1].d);
-      return {r:+(RPE_TABLE[i-1].r+f*(RPE_TABLE[i].r-RPE_TABLE[i-1].r)).toFixed(1),l:RPE_TABLE[i-1].l};
-    }
+// ── Storage (best effort) ────────────────────────────────
+const store={
+  get(k,d){try{const v=localStorage.getItem('tl2_'+k);return v===null?d:JSON.parse(v);}catch(e){return d;}},
+  set(k,v){try{localStorage.setItem('tl2_'+k,JSON.stringify(v));}catch(e){}}
+};
+const cfg=Object.assign({ai:false,worker:'',plate:45,rec:true,stopSec:7,wake:true,debug:false},store.get('cfg',{}));
+let calib=store.get('calib',{}); // {BP:[{v,rpe,t}],...}
+
+// ── RPE model ────────────────────────────────────────────
+function rpeDefault(lift,v){
+  const t=LIFTS[lift].table;
+  if(v<=t[0][0]) return 10;
+  if(v>=t[t.length-1][0]) return t[t.length-1][1];
+  for(let i=1;i<t.length;i++){
+    if(v<=t[i][0]){const f=(v-t[i-1][0])/(t[i][0]-t[i-1][0]);return t[i-1][1]+f*(t[i][1]-t[i-1][1]);}
   }
-  return RPE_TABLE[RPE_TABLE.length-1];
+  return 4;
+}
+function personalFit(lift){
+  const pts=(calib[lift]||[]).slice(-40);
+  if(pts.length<3) return null;
+  const n=pts.length; let sx=0,sy=0,sxx=0,sxy=0;
+  pts.forEach(p=>{sx+=p.v;sy+=p.rpe;sxx+=p.v*p.v;sxy+=p.v*p.rpe;});
+  const den=n*sxx-sx*sx; if(Math.abs(den)<1e-9) return null;
+  const b=(n*sxy-sx*sy)/den, a=(sy-b*sx)/n;
+  if(b>-2) return null; // must slope down (faster = easier)
+  return {a,b,n};
+}
+function normVelocity(lift,mcv,rom){
+  const f=Math.sqrt(LIFTS[lift].refROM/Math.max(0.05,rom));
+  return mcv*Math.max(0.7,Math.min(1.6,f));
+}
+function rpeFromVelocity(lift,v){
+  let r=rpeDefault(lift,v);
+  const fit=personalFit(lift);
+  if(fit){const w=fit.n/(fit.n+4); r=(1-w)*r+w*(fit.a+fit.b*v);}
+  return Math.max(4,Math.min(10,Math.round(r*10)/10));
 }
 
-// ── EMA ───────────────────────────────────────────────────
-class EMA{
-  constructor(a){this.a=a;this.v=null;}
-  update(x){return this.v=this.v===null?x:this.a*x+(1-this.a)*this.v;}
-  reset(){this.v=null;}
-}
-
-// ── RepTracker ────────────────────────────────────────────
-// Pure EMA velocity — simple and proven to work
-const Ph={W:'WAITING',D:'DESCENDING',B:'BOTTOM',A:'ASCENDING'};
-
-class RepTracker{
-  constructor(cb){
-    this.cb=cb;
-    this.history=[];
-    this._posEMA=new EMA(0.4);
-    this._velEMA=new EMA(0.3);
-    this._reset();
+// ── Plate tracker (NCC template matching on grayscale) ───
+class PlateTracker{
+  constructor(){this.ok=false;}
+  init(G,W,H,cx,cy){
+    this.W=W;this.H=H;
+    this.r=estimateRadius(G,W,H,cx,cy);
+    this.cx=cx;this.cy=cy;this.vx=0;this.vy=0;
+    this._makeTemplate(G);
+    this.score=1;this.lost=0;this.ok=true;
   }
-
-  feed(lm, exKey, now, bandY=null){
-    const ex=EX[exKey];
-    if(!ex||!lm||lm.length<25) return null;
-
-    // Get Y from all configured landmarks — use whichever are visible
-    const ys=ex.lm
-      .map(i=>lm?.[i])
-      .filter(p=>p&&(p.visibility??1)>0.05)
-      .map(p=>p.y);
-
-    let rawY;
-    if(ys.length>0){
-      rawY=ys.reduce((a,b)=>a+b,0)/ys.length;
-      // Blend with color band if available
-      if(bandY!==null) rawY=rawY*0.6+bandY*0.4;
-      this._lastY=rawY;
-    } else if(bandY!==null){
-      rawY=bandY;
-      this._lastY=rawY;
-    } else if(this._lastY!==null){
-      rawY=this._lastY;
-    } else {
-      return null;
+  setRadius(r){this.r=Math.max(6,r);}
+  _makeTemplate(G){
+    const hs=Math.max(8,Math.min(42,Math.round(this.r*0.72)));
+    this.tw=this.th=hs*2;
+    const x0=Math.round(this.cx-hs),y0=Math.round(this.cy-hs);
+    this.T=new Float32Array(this.tw*this.th);
+    for(let j=0;j<this.th;j++)for(let i=0;i<this.tw;i++){
+      const x=Math.min(this.W-1,Math.max(0,x0+i)),y=Math.min(this.H-1,Math.max(0,y0+j));
+      this.T[j*this.tw+i]=G[y*this.W+x];
     }
-
-    const y=this._posEMA.update(rawY);
-    let vel=0;
-    if(this._prevT!==null){
-      const dt=Math.max(now-this._prevT, 1);
-      vel=this._velEMA.update((y-this._prevY)/dt);
-    }
-    this._prevY=y; this._prevT=now;
-
-    // Direction: positive vel = moving DOWN (body descending)
-    const goDown=vel>0.0001;
-    const goUp  =vel<-0.0001;
-
-    this._fsm(y,vel,goDown,goUp,now);
-
-    return {phase:this._phase, y, vel};
   }
-
-  _fsm(y,vel,goDown,goUp,now){
-    switch(this._phase){
-      case Ph.W:
-        if(goDown){
-          if(++this._dc>=3){
-            this._phase=Ph.D;
-            this._dc=0; this._uc=0;
-            this._repStart=now;
-            this._botY=y;
-          }
-        } else this._dc=Math.max(0,this._dc-1);
-        break;
-
-      case Ph.D:
-        if(y>this._botY) this._botY=y; // track lowest physical point
-        if(goUp){
-          if(++this._uc>=2){this._phase=Ph.B; this._uc=0; this._dc=0;}
-        } else this._uc=Math.max(0,this._uc-1);
-        break;
-
-      case Ph.B:
-        if(goUp){
-          if(++this._uc>=2){
-            this._phase=Ph.A;
-            this._ascentStart=now;
-            this._uc=0; this._dc=0; this._sc=0;
-          }
-        } else this._uc=Math.max(0,this._uc-1);
-        break;
-
-      case Ph.A:{
-        const ascentDur=(now-this._ascentStart)/1000;
-        const totalDur=(now-this._repStart)/1000;
-
-        // Track highest point reached (lowest Y value = highest physical position)
-        if(this._peakY===null||y<this._peakY) this._peakY=y;
-
-        // How far from peak are we? (0 = at top, positive = below peak)
-        const distFromPeak=y-this._peakY;
-        // Range of motion estimate
-        const rom=this._botY!==null?Math.abs(this._botY-this._peakY):0.1;
-
-        // Next rep: sustained downward movement
-        if(goDown) this._dc++;
-        else this._dc=Math.max(0,this._dc-2);
-
-        if(this._dc>=5 && ascentDur>0.8){
-          this._finish(totalDur,ascentDur,now);
-          this._phase=Ph.D;
-          this._dc=0;this._uc=0;this._sc=0;this._peakY=null;
-          this._repStart=now;this._botY=y;
-          break;
+  // Quadrant NCC: score = mean of the 2 best quadrants → robust when part of the plate is hidden
+  _ncc(G,x0,y0,sp){
+    const W=this.W,tw=this.tw,th=this.th,T=this.T,hw=tw>>1,hh=th>>1;
+    const A=this._acc||(this._acc=new Float64Array(24)); A.fill(0);
+    for(let j=0;j<th;j+=sp){const row=(y0+j)*W+x0,trow=j*tw,qy=j>=hh?2:0;
+      for(let i=0;i<tw;i+=sp){const a=T[trow+i],b=G[row+i],o=(qy+(i>=hw?1:0))*6;
+        A[o]+=a;A[o+1]+=b;A[o+2]+=a*a;A[o+3]+=b*b;A[o+4]+=a*b;A[o+5]++;}}
+    const q=[];
+    for(let k=0;k<4;k++){const o=k*6,n=A[o+5];if(!n){q.push(-1);continue;}
+      const va=A[o+2]-A[o]*A[o]/n,vb=A[o+3]-A[o+1]*A[o+1]/n;
+      q.push(va<=1e-6||vb<=1e-6?-1:(A[o+4]-A[o]*A[o+1]/n)/Math.sqrt(va*vb));}
+    this._q=q;
+    const s=q.slice().sort((a,b)=>b-a);
+    return (s[0]+s[1])/2;
+  }
+  _scoreAt(G,cx,cy,sp){
+    const x0=Math.round(cx-this.tw/2),y0=Math.round(cy-this.th/2);
+    if(x0<0||y0<0||x0+this.tw>this.W||y0+this.th>this.H) return -2;
+    return this._ncc(G,x0,y0,sp);
+  }
+  track(G){
+    if(!this.ok) return null;
+    const px=this.cx+this.vx,py=this.cy+this.vy;
+    let rad=Math.max(10,Math.round(this.r*0.5));
+    if(this.lost>0) rad=Math.round(rad*2.5);
+    let best=-3,bx=px,by=py;
+    for(let dy=-rad;dy<=rad;dy+=2)for(let dx=-rad;dx<=rad;dx+=2){
+      const s=this._scoreAt(G,px+dx,py+dy,2); if(s>best){best=s;bx=px+dx;by=py+dy;}
+    }
+    // fine search
+    let fb=-3,fx=bx,fy=by;
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+      const s=this._scoreAt(G,bx+dx,by+dy,1); if(s>fb){fb=s;fx=bx+dx;fy=by+dy;}
+    }
+    // subpixel parabola
+    const sL=this._scoreAt(G,fx-1,fy,1),sR=this._scoreAt(G,fx+1,fy,1);
+    const sU=this._scoreAt(G,fx,fy-1,1),sD=this._scoreAt(G,fx,fy+1,1);
+    let ox=0,oy=0;
+    const dxn=sL-2*fb+sR, dyn=sU-2*fb+sD;
+    if(sL>-2&&sR>-2&&dxn<0) ox=Math.max(-0.5,Math.min(0.5,0.5*(sL-sR)/dxn));
+    if(sU>-2&&sD>-2&&dyn<0) oy=Math.max(-0.5,Math.min(0.5,0.5*(sU-sD)/dyn));
+    this.score=fb;
+    this._scoreAt(G,fx,fy,1); const quads=this._q.slice(); // quadrant scores at final position
+    if(fb<0.33){ this.lost++; this.vx*=0.5; this.vy*=0.5; return {x:this.cx,y:this.cy,score:fb,lost:true}; }
+    const nx=fx+ox, ny=fy+oy;
+    this.vx=0.6*(nx-this.cx)+0.4*this.vx; this.vy=0.6*(ny-this.cy)+0.4*this.vy;
+    this.cx=nx; this.cy=ny; this.lost=0;
+    // slow template adaptation — only when the whole plate is clearly visible (never learn an occluder)
+    if(Math.min(...quads)>0.6&&fb>0.7){
+      const x0=Math.round(this.cx-this.tw/2),y0=Math.round(this.cy-this.th/2);
+      if(x0>=0&&y0>=0&&x0+this.tw<=this.W&&y0+this.th<=this.H){
+        for(let j=0;j<this.th;j++)for(let i=0;i<this.tw;i++){
+          const k=j*this.tw+i; this.T[k]=0.93*this.T[k]+0.07*G[(y0+j)*this.W+x0+i];
         }
-
-        // "Still at top" — only trigger if:
-        // 1. We've been still for ~1s
-        // 2. We're within top 20% of ROM (actually near the top, not sticking point)
-        // 3. Ascent has been going for at least 1s
-        if(!goDown&&!goUp) this._sc++;
-        else this._sc=0;
-
-        const nearTop=distFromPeak<rom*0.2; // within top 20% of ROM
-        if(this._sc>=30 && ascentDur>1.0 && nearTop){
-          this._finish(totalDur,ascentDur,now);
-          this._phase=Ph.W;
-          this._dc=0;this._uc=0;this._sc=0;this._peakY=null;
-          this._repStart=null;this._botY=null;
-        }
-
-        // Safety cap
-        if(ascentDur>25){
-          this._phase=Ph.W;
-          this._dc=0;this._uc=0;this._sc=0;this._peakY=null;
-          this._repStart=null;
-        }
-        break;
       }
     }
-  }
-
-  _finish(totalDur, ascentDur, now){
-    if(totalDur<0.5||totalDur>25) return;
-    const n=this.history.length+1;
-    const {r,l}=rpeFromDur(totalDur);
-    const rep={n,totalDur:+totalDur.toFixed(2),ascentDur:+ascentDur.toFixed(2),rpe:r,label:l,ts:now};
-    this.history.push(rep);
-    this.cb(rep,[...this.history]);
-  }
-
-  reset(){
-    this.history=[];
-    this._posEMA.reset(); this._velEMA.reset();
-    this._lastY=null;
-    this._reset();
-  }
-
-  _reset(){
-    this._phase=Ph.W;
-    this._prevY=null; this._prevT=null;
-    this._lastY=null;
-    this._botY=null;
-    this._repStart=null; this._ascentStart=null;
-    this._dc=0; this._uc=0; this._sc=0;
-    this._peakY=null;
+    return {x:this.cx,y:this.cy,score:fb,lost:false};
   }
 }
 
-// ── State ─────────────────────────────────────────────────
-let poseLandmarker=null, drawingUtils=null, stream=null;
-let tracking=false, rafId=null, lastVideoTime=-1;
-let facingMode='environment';
-let curEx='SQ';
-let weightKg=null, weightUnit='kg';
-let countingDown=false;
-let setHistory=[], setNum=0;
-let autoRecord=true, useWakeLock=true, useAutoStop=true, autoStopSec=7, useColorBand=false;
-let wakeLockSentinel=null;
-let mediaRecorder=null, chunks=[], isRecording=false, camOn=true;
-let liveRpe=null, liveRepNum=0;
-let lastMoveTime=performance.now();
+// Estimate plate radius from tap point: find the most consistent circular edge across rays
+function estimateRadius(G,W,H,cx,cy){
+  const maxR=Math.floor(Math.min(W,H)*0.33), N=36, bins=new Float32Array(maxR+4);
+  let used=0;
+  for(let a=0;a<N;a++){
+    const ang=a/N*Math.PI*2, ca=Math.cos(ang), sa=Math.sin(ang), prof=[];
+    for(let r=0;r<=maxR;r++){
+      const x=Math.round(cx+ca*r), y=Math.round(cy+sa*r);
+      if(x<0||y<0||x>=W||y>=H) break;
+      prof.push(G[y*W+x]);
+    }
+    if(prof.length<12) continue;
+    used++;
+    const g=[]; let gmax=0;
+    for(let r=2;r<prof.length-2;r++){const v=Math.abs(prof[r+2]-prof[r-2]);g[r]=v;if(v>gmax)gmax=v;}
+    const thr=Math.max(14,gmax*0.35);
+    for(let r=6;r<prof.length-2;r++){
+      if(g[r]>=thr && g[r]>=(g[r-1]||0) && g[r]>=(g[r+1]||0)){ for(let k=-2;k<=2;k++) if(bins[r+k]!==undefined) bins[r+k]+=1-Math.abs(k)*0.3; }
+    }
+  }
+  let mc=0; for(let r=6;r<bins.length;r++) if(bins[r]>mc) mc=bins[r];
+  if(used<8||mc<used*0.25) return Math.round(Math.min(W,H)*0.12);
+  let best=0;
+  for(let r=bins.length-1;r>=6;r--){ if(bins[r]>=mc*0.6 && bins[r]>=used*0.3){best=r;break;} }
+  return best||Math.round(Math.min(W,H)*0.12);
+}
 
-const tracker=new RepTracker((rep,history)=>{
-  liveRpe=rep.rpe; liveRepNum=rep.n;
-  lastMoveTime=performance.now();
-  updateMetrics(rep,history);
-  addRepRow(rep);
-  showToast(`Rep ${rep.n} ✓  ${rep.totalDur}s — RPE ${rep.rpe}`);
-});
-
-// ── DOM ───────────────────────────────────────────────────
-const $=s=>document.querySelector(s);
-const video=$('#video'), canvas=$('#overlay'), ctx=canvas.getContext('2d');
-const recCanvas=$('#rec-canvas'), recCtx=recCanvas.getContext('2d');
-const loadScreen=$('#loading-screen'), loadStatus=$('#load-status');
-const phaseBadge=$('#phase-badge'), trackLabel=$('#track-label');
-const mReps=$('#m-reps'),mTime=$('#m-time'),mAvgRpe=$('#m-avgrpe'),mMean=$('#m-mean');
-const rpeVal=$('#rpe-val'),rpeDesc=$('#rpe-desc'),rpeFill=$('#rpe-fill');
-const repTbody=$('#rep-tbody'),setsTbody=$('#sets-tbody');
-const btnStart=$('#btn-start'),btnReset=$('#btn-reset');
-const cdOverlay=$('#countdown-overlay'),cdNum=$('#countdown-num');
-const weightIn=$('#weight-in');
-const exSelect=$('#exercise-select');
-const btnCamOff=$('#btn-cam-off'),btnCamFlip=$('#btn-cam-flip');
-const camOffScreen=$('#cam-off-screen');
-const autostopRing=$('#autostop-ring'),autostopArc=$('#autostop-arc');
-
-// ── MediaPipe init ────────────────────────────────────────
-async function initMP(){
-  setStatus('Downloading model…');
-  try{
-    const vision=await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm');
-    poseLandmarker=await PoseLandmarker.createFromOptions(vision,{
-      baseOptions:{
-        modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-        delegate:'GPU',
-      },
-      runningMode:'VIDEO',numPoses:1,
-      minPoseDetectionConfidence:0.5,
-      minPosePresenceConfidence:0.5,
-      minTrackingConfidence:0.5,
+// ── Rep segmentation (bar height, meters) ────────────────
+// A rep = bar travels up by ≥ minROM from the lowest point since the previous rep.
+// Small reversals near lockout (tracking jitter) extend the same rep instead of ending it.
+class RepSeg{
+  constructor(lift,onRep){
+    this.lift=lift; this.minROM=LIFTS[lift].minROM; this.eps=0.03; this.onRep=onRep;
+    this.T=[];this.Y=[];this.X=[];this.ok=[];
+    this.raw=[]; this.ema=null;
+    this.dir=0;this.cur=-1;this.mn=-1;this.mx=-1;this.ext=[];
+    this.reps=[];
+  }
+  push(t,y,x,ok){
+    // de-spike: median of last 5 raw values, then light EMA
+    if(ok){this.raw.push(y); if(this.raw.length>5) this.raw.shift();}
+    const med=this.raw.length?this.raw.slice().sort((a,b)=>a-b)[this.raw.length>>1]:y;
+    this.ema=this.ema===null?med:0.55*med+0.45*this.ema;
+    const i=this.T.length; this.T.push(t);this.Y.push(this.ema);this.X.push(x);this.ok.push(ok);
+    if(!ok) return;
+    this._zig(i); this._still(i);
+  }
+  vel(i){
+    const a=Math.max(0,i-2), b=Math.min(this.T.length-1,i+2);
+    const dt=this.T[b]-this.T[a]; return dt>0?(this.Y[b]-this.Y[a])/dt:0;
+  }
+  _zig(i){
+    const Y=this.Y,e=this.eps;
+    if(this.dir===0){
+      if(this.mn<0||Y[i]<Y[this.mn]) this.mn=i;
+      if(this.mx<0||Y[i]>Y[this.mx]) this.mx=i;
+      if(Y[this.mx]-Y[this.mn]>e){ this.dir=this.mx>this.mn?1:-1; this.cur=this.dir===1?this.mx:this.mn;
+        this.ext.push({i:this.dir===1?this.mn:this.mx,type:this.dir===1?'L':'H'}); }
+      return;
+    }
+    if(this.dir===1){
+      if(Y[i]>=Y[this.cur]) this.cur=i;
+      else if(Y[this.cur]-Y[i]>e){ this.ext.push({i:this.cur,type:'H'}); this._candidate(this.cur); this.dir=-1; this.cur=i; }
+    } else {
+      if(Y[i]<=Y[this.cur]) this.cur=i;
+      else if(Y[i]-Y[this.cur]>e){ this.ext.push({i:this.cur,type:'L'}); this.dir=1; this.cur=i; }
+    }
+  }
+  _boundary(){ const r=this.reps[this.reps.length-1]; return r?r._hi:0; }
+  _lowestSince(a,b){ let m=a; for(let k=a;k<=b;k++) if(this.ok[k]&&this.Y[k]<this.Y[m]) m=k; return m; }
+  _highestIn(a,b){ let m=a; for(let k=a;k<=b;k++) if(this.ok[k]&&this.Y[k]>this.Y[m]) m=k; return m; }
+  // hi is a local top. Either extend the last rep (bar never really went back down) or start a new one.
+  _candidate(hi){
+    const Y=this.Y, last=this.reps[this.reps.length-1];
+    if(last&&hi>last._hi){
+      const dip=Y[last._hi]-Y[this._lowestSince(last._hi,hi)];
+      if(dip<this.minROM*0.5){ if(Y[hi]>Y[last._hi]) this._rep(last._lo,hi,last); return; }
+    }
+    const from=this._boundary(), lo=this._lowestSince(from,hi);
+    if(lo<hi&&Y[hi]-Y[lo]>=this.minROM) this._rep(lo,hi,null);
+  }
+  _still(i){
+    if(this.dir!==1) return;
+    const Y=this.Y,T=this.T,h=this.cur, from=this._boundary(), lo=this._lowestSince(from,h);
+    if(Y[h]-Y[lo]<this.minROM||Y[h]-Y[i]>=this.eps) return;
+    const last=this.reps[this.reps.length-1];
+    if(last&&last._hi===h) return;
+    const top=this._highestIn(from,lo), hasTop=top<lo&&Y[top]-Y[lo]>=this.minROM;
+    const nearTop=hasTop?Y[h]>=Y[top]-0.06:true;
+    const holdT=hasTop?0.7:1.2;
+    if(nearTop&&T[i]-T[h]>=holdT) this._candidate(h);
+  }
+  _rep(lo,hi,existing){
+    const T=this.T,Y=this.Y,yL=Y[lo],yH=Y[hi],rom=yH-yL;
+    if(rom<this.minROM||rom>1.2) return;
+    const band=0.015;
+    let is=lo; for(let k=lo;k<=hi;k++){ if(Y[k]>=yL+band){is=Math.max(lo,k-1);break;} }
+    let ie=hi; for(let k=is;k<=hi;k++){ if(Y[k]>=yH-band){ie=k;break;} }
+    const tUp=Math.max(0.05,T[ie]-T[is]);
+    const mcv=(Y[ie]-Y[is])/tUp;
+    let peakV=0,ip=is;
+    for(let k=is;k<=ie;k++){const v=this.vel(k);if(v>peakV){peakV=v;ip=k;}}
+    // grind: (a) velocity dips after an early push, or (b) a long slow stretch in 10-90% ROM (e.g. slow off the chest)
+    let minV=Infinity,stickPct=null,slowT=0,dipMin=Infinity;
+    for(let k=is+1;k<=ie;k++){
+      const p=(Y[k]-yL)/rom; if(p<0.1||p>0.9) continue;
+      const v=this.vel(k);
+      if(v<minV){minV=v;stickPct=Math.round(p*100);}
+      if(k>ip&&v<dipMin) dipMin=v;
+      if(v<0.5*peakV) slowT+=T[k]-T[k-1];
+    }
+    const earlyPeak=(Y[ip]-yL)/rom<0.75;
+    const grind=peakV>0&&((earlyPeak&&isFinite(dipMin)&&dipMin<0.55*peakV)||slowT>=0.35);
+    // eccentric: from the top before this descent to arrival at the bottom
+    let tDown=null,tPause=null;
+    const from=existing?(this.reps.length>1?this.reps[this.reps.length-2]._hi:0):this._boundary();
+    const top=this._highestIn(from,lo);
+    if(top<lo&&Y[top]-yL>=this.minROM*0.6){
+      let es=top; for(let k=top;k<=lo;k++){ if(Y[k]<=Y[top]-band){es=Math.max(top,k-1);break;} }
+      let arr=lo; for(let k=es;k<=lo;k++){ if(Y[k]<=yL+band){arr=k;break;} }
+      tDown=Math.max(0,T[arr]-T[es]); tPause=Math.max(0,T[is]-T[arr]);
+    }
+    if(tUp<0.25||tUp>10||mcv>1.6||peakV>2.5) return; // implausible for a loaded barbell → tracking glitch
+    const rep=existing||{n:this.reps.length+1};
+    const vAdj=normVelocity(this.lift,mcv,rom);
+    Object.assign(rep,{
+      _lo:lo,_hi:hi,
+      tStart:+T[is].toFixed(2), tEnd:+T[ie].toFixed(2), tBottom:+T[lo].toFixed(2),
+      rom:+rom.toFixed(3), mcv:+mcv.toFixed(3), vAdj:+vAdj.toFixed(3), peakV:+peakV.toFixed(3),
+      tUp:+tUp.toFixed(2), tDown:tDown==null?null:+tDown.toFixed(2), tPause:tPause==null?null:+tPause.toFixed(2),
+      total:+((tDown||0)+(tPause||0)+tUp).toFixed(2),
+      grind, stickPct:grind?stickPct:null, slowT:+slowT.toFixed(2),
+      rpe:rpeFromVelocity(this.lift,vAdj),
     });
-    drawingUtils=new DrawingUtils(ctx);
-    setStatus('Requesting camera…');
-    await startCamera();
-    loadScreen.style.display='none';
-    trackLabel.textContent=EX[curEx].trackName;
-  }catch(e){setStatus('Error: '+e.message);console.error(e);}
+    if(!existing) this.reps.push(rep);
+    this.onRep(rep,!existing);
+  }
+  phase(i){
+    if(i<2||!this.ok[i]) return 'lost';
+    const v=this.vel(i);
+    if(v<-0.06) return 'down';
+    if(v>0.06) return 'up';
+    const lo=this._lowestSince(this._boundary(),i);
+    if(this.Y[i]-this.Y[lo]<0.04&&lo>this._boundary()) return 'bottom';
+    return 'hold';
+  }
 }
 
+// ── State ────────────────────────────────────────────────
+const $=s=>document.querySelector(s);
+const video=$('#video'),overlay=$('#overlay'),octx=overlay.getContext('2d');
+const work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadFrequently:true});
+const WORK_W=320;
+let G=null,WW=0,WH=0;
+let stream=null,facingMode='environment',camOn=true;
+let curLift='BP',weightKg=null,weightUnit='kg';
+const tracker=new PlateTracker();
+let seg=null,active=false,counting=false,t0=0,y0=0,lastT=0,lastRepWall=0,lastMoveWall=0;
+let trail=[];       // recent positions (work px) for bar path
+let setHistory=store.get('sets',[]),setNum=setHistory.length?Math.max(...setHistory.map(s=>s.n)):0;
+let curSetData=null;
+let fps=0,fpsN=0,fpsT=performance.now();
+let wakeLock=null;
+
+// ── Camera ───────────────────────────────────────────────
 async function startCamera(){
   if(stream) stream.getTracks().forEach(t=>t.stop());
-  stream=await navigator.mediaDevices.getUserMedia({
-    video:{facingMode,width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},audio:false});
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode,width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},audio:false});
   video.srcObject=stream;
-  video.style.transform=facingMode==='user'?'scaleX(-1)':'none';
-  await new Promise(r=>video.onloadedmetadata=r);
-  resizeCanvas();
+  video.style.transform=overlay.style.transform=facingMode==='user'?'scaleX(-1)':'none';
+  await new Promise(r=>{if(video.readyState>=1)r();else video.onloadedmetadata=r;});
+  await video.play().catch(()=>{});
+  overlay.width=video.videoWidth; overlay.height=video.videoHeight;
+  tracker.ok=false; updateTargetUI();
 }
 
-function resizeCanvas(){
-  canvas.width=video.videoWidth||video.clientWidth;
-  canvas.height=video.videoHeight||video.clientHeight;
-  canvas.style.width='100%'; canvas.style.height='100%';
+function grabGray(){
+  const vw=video.videoWidth,vh=video.videoHeight; if(!vw) return false;
+  WW=WORK_W; WH=Math.round(WORK_W*vh/vw);
+  if(work.width!==WW||work.height!==WH){work.width=WW;work.height=WH;G=new Float32Array(WW*WH);}
+  wctx.drawImage(video,0,0,WW,WH);
+  const d=wctx.getImageData(0,0,WW,WH).data;
+  for(let i=0,j=0;i<G.length;i++,j+=4) G[i]=0.299*d[j]+0.587*d[j+1]+0.114*d[j+2];
+  return true;
 }
 
-// ── Color band detection ─────────────────────────────────
-const _bandCanvas=document.createElement('canvas');
-function detectRedBand(videoEl,W,H){
-  const SCALE=0.15;
-  const sw=Math.round(W*SCALE),sh=Math.round(H*SCALE);
-  if(sw<4||sh<4) return null;
-  const oc=_bandCanvas.getContext('2d',{willReadFrequently:true});
-  _bandCanvas.width=sw;_bandCanvas.height=sh;
-  try{oc.drawImage(videoEl,0,0,sw,sh);}catch(e){return null;}
-  let data;
-  try{data=oc.getImageData(0,0,sw,sh).data;}catch(e){return null;}
-  let sx=0,sy=0,cnt=0;
-  for(let y=0;y<sh;y++){for(let x=0;x<sw;x++){
-    const i=(y*sw+x)*4,r=data[i],g=data[i+1],b=data[i+2];
-    const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
-    if(max===0) continue;
-    const s=d/max;
-    let h=0;
-    if(d>0){
-      if(max===r)h=((g-b)/d+6)%6;
-      else if(max===g)h=(b-r)/d+2;
-      else h=(r-g)/d+4;
-      h*=60;
-    }
-    if((h<20||h>340)&&s>0.45&&max>80){sx+=x;sy+=y;cnt++;}
-  }}
-  if(cnt<6) return null;
-  return {x:(sx/cnt)/sw,y:(sy/cnt)/sh};
+// screen tap → video pixel coords (object-fit:contain)
+function tapToVideo(ev){
+  const r=$('#camera-wrap').getBoundingClientRect(), vw=video.videoWidth, vh=video.videoHeight;
+  const s=Math.min(r.width/vw,r.height/vh), dw=vw*s, dh=vh*s, ox=(r.width-dw)/2, oy=(r.height-dh)/2;
+  let x=(ev.clientX-r.left-ox)/s, y=(ev.clientY-r.top-oy)/s;
+  if(facingMode==='user') x=vw-x;
+  if(x<0||y<0||x>vw||y>vh) return null;
+  return {x,y};
 }
 
-// ── Detection loop ────────────────────────────────────────
-const PHASE_LABEL={WAITING:'Ready',DESCENDING:'Descending',BOTTOM:'Bottom',ASCENDING:'Ascending'};
-const PHASE_CLS={WAITING:'',DESCENDING:'descending',BOTTOM:'bottom',ASCENDING:'ascending'};
-
-function detectLoop(){
-  if(!tracking){rafId=null;return;}
-  rafId=requestAnimationFrame(detectLoop);
-  if(video.readyState<2) return;
-  // Allow same frame — don't skip
-  const t=performance.now();
-  if(video.currentTime!==lastVideoTime){
-    lastVideoTime=video.currentTime;
-    resizeCanvas();
-    const W=canvas.width, H=canvas.height;
-    const result=poseLandmarker.detectForVideo(video,t);
-    const lm=result?.landmarks?.[0]??null;
-
-    ctx.clearRect(0,0,W,H);
-    if(lm){
-      drawingUtils.drawLandmarks(lm,{radius:2,color:'rgba(224,108,0,0.4)',fillColor:'rgba(224,108,0,0.1)',lineWidth:1});
-      drawingUtils.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{color:'rgba(255,255,255,0.1)',lineWidth:1});
-    }
-
-    // Color band: detect red → inject as additional Y signal
-    let bandY=null;
-    if(useColorBand){
-      const bp=detectRedBand(video,W,H);
-      if(bp){
-        bandY=bp.y;
-        ctx.beginPath();
-        ctx.arc(bp.x*W,bp.y*H,14,0,Math.PI*2);
-        ctx.strokeStyle='#ff4444';ctx.lineWidth=3;
-        ctx.fillStyle='rgba(255,50,50,0.25)';
-        ctx.fill();ctx.stroke();
-      }
-    }
-    const live=tracker.feed(lm,curEx,t,bandY);
-    if(live){
-      // Draw tracked point
-      const ex=EX[curEx];
-      const pts=ex.lm.map(i=>lm?.[i]).filter(p=>p&&(p.visibility??1)>0.05);
-      if(pts.length){
-        const px=pts.reduce((s,p)=>s+p.x,0)/pts.length;
-        const py=pts.reduce((s,p)=>s+p.y,0)/pts.length;
-        ctx.beginPath();
-        ctx.arc(px*W,py*H,12,0,Math.PI*2);
-        ctx.fillStyle=live.phase===Ph.A?'rgba(0,229,200,0.85)':
-                      live.phase===Ph.B?'rgba(224,108,0,0.9)':
-                      live.phase===Ph.D?'rgba(255,193,7,0.8)':'rgba(255,255,255,0.35)';
-        ctx.fill();
-        ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
-      }
-      // Velocity bar
-      const bH=100,bW=7,bX=W-18,bY=(H-bH)/2;
-      const vn=Math.max(-1,Math.min(1,live.vel/0.002));
-      ctx.fillStyle='rgba(255,255,255,0.07)';
-      ctx.fillRect(bX,bY,bW,bH);
-      ctx.fillStyle=vn<0?'rgba(0,229,200,0.8)':'rgba(255,193,7,0.6)';
-      const fh=Math.abs(vn)*bH/2;
-      ctx.fillRect(bX,vn<0?bY+bH/2-fh:bY+bH/2,bW,fh);
-
-      phaseBadge.textContent=PHASE_LABEL[live.phase]||live.phase;
-      phaseBadge.className=PHASE_CLS[live.phase]||'';
-
-      if(live.phase!==Ph.W) lastMoveTime=t;
-    } else {
-      phaseBadge.textContent='Ready';
-      phaseBadge.className='';
-    }
+// ── Main loop ────────────────────────────────────────────
+const metersPerPx=()=>(cfg.plate/100)/(2*tracker.r);
+function frameTime(meta){
+  if(meta&&meta.captureTime) return meta.captureTime/1000;
+  if(meta&&meta.mediaTime!==undefined) return meta.mediaTime;
+  return performance.now()/1000;
+}
+function loop(now,meta){
+  scheduleFrame();
+  if(!camOn||video.readyState<2) return;
+  if(!grabGray()) return;
+  const t=frameTime(meta);
+  fpsN++; if(performance.now()-fpsT>1000){fps=fpsN;fpsN=0;fpsT=performance.now();}
+  let res=null;
+  if(tracker.ok){
+    res=tracker.track(G);
+    if(res&&!res.lost){trail.push({x:res.x,y:res.y,t});}
+    while(trail.length&&t-trail[0].t>3) trail.shift();
   }
+  if(active&&seg&&res){
+    const ym=-(res.y-y0)*metersPerPx();
+    seg.push(t-t0,ym,res.x,!res.lost);
+    const i=seg.T.length-1;
+    const ph=seg.phase(i);
+    setPhase(ph);
+    const v=seg.vel(Math.max(0,i-2));
+    if(Math.abs(v)>0.08) lastMoveWall=performance.now();
+    checkAutoStop(v);
+    captureFrame(t-t0);
+  }
+  drawOverlay(res);
+  if(cfg.debug) drawDebug(res);
+  lastT=t;
+}
+function scheduleFrame(){
+  if(video.requestVideoFrameCallback) video.requestVideoFrameCallback(loop);
+  else requestAnimationFrame(n=>loop(n,null));
+}
 
-  // Auto-stop: only trigger when WAITING (between reps, never mid-rep)
-  const phase=tracker._phase;
-  if(useAutoStop && tracker.history.length>0 && phase===Ph.W){
-    const idle=(t-lastMoveTime)/1000;
-    const pct=Math.min(1,idle/autoStopSec);
-    autostopRing.classList.add('visible');
-    autostopArc.style.strokeDashoffset=94.2-(pct*94.2);
-    if(idle>=autoStopSec){stopSet(true);return;}
-  } else {
-    autostopRing.classList.remove('visible');
+// ── Overlay ──────────────────────────────────────────────
+function drawOverlay(res){
+  const W=overlay.width,H=overlay.height; octx.clearRect(0,0,W,H);
+  if(!tracker.ok||!WW) return;
+  const k=W/WW;
+  // bar path
+  if(trail.length>1){
+    octx.lineWidth=Math.max(2,W/250); octx.strokeStyle='rgba(0,229,200,0.75)'; octx.beginPath();
+    trail.forEach((p,i)=>{const x=p.x*k,y=p.y*k;i?octx.lineTo(x,y):octx.moveTo(x,y);}); octx.stroke();
+  }
+  const lost=res&&res.lost;
+  const ph=active&&seg?seg.phase(seg.T.length-1):'hold';
+  const col=lost?'#e05555':ph==='up'?'#00e5c8':ph==='down'?'#ffc107':ph==='bottom'?'#e06c00':'#ffffff';
+  octx.lineWidth=Math.max(3,W/180); octx.strokeStyle=col;
+  octx.beginPath(); octx.arc(tracker.cx*k,tracker.cy*k,tracker.r*k,0,Math.PI*2); octx.stroke();
+  octx.fillStyle=col; octx.beginPath(); octx.arc(tracker.cx*k,tracker.cy*k,Math.max(4,W/120),0,Math.PI*2); octx.fill();
+  // velocity bar
+  if(active&&seg&&seg.T.length>4){
+    const v=seg.vel(seg.T.length-3), vn=Math.max(-1,Math.min(1,v/1.0));
+    const bh=H*0.25,bw=W*0.018,bx=W-bw*2.5,by=(H-bh)/2;
+    octx.fillStyle='rgba(255,255,255,0.12)'; octx.fillRect(bx,by,bw,bh);
+    octx.fillStyle=vn>0?'rgba(0,229,200,0.9)':'rgba(255,193,7,0.8)';
+    const fh=Math.abs(vn)*bh/2; octx.fillRect(bx,vn>0?by+bh/2-fh:by+bh/2,bw,fh);
   }
 }
-
-// ── Metrics ───────────────────────────────────────────────
-function updateMetrics(rep,history){
-  mReps.textContent=rep.n;
-  mTime.textContent=rep.totalDur.toFixed(2);
-  const avgRpe=(history.reduce((s,r)=>s+r.rpe,0)/history.length).toFixed(1);
-  mAvgRpe.textContent=avgRpe;
-  mAvgRpe.className='metric-val '+(rep.rpe>=9?'danger':rep.rpe>=8?'':'teal');
-  mMean.textContent=(history.reduce((s,r)=>s+r.totalDur,0)/history.length).toFixed(2);
-  const pct=Math.min(100,((rep.rpe-4)/6)*100);
-  rpeFill.style.width=pct+'%';
-  rpeFill.style.background=rep.rpe>=9?'#e05555':rep.rpe>=8?'#ffc107':'var(--acc)';
-  rpeVal.textContent=rep.rpe;
-  rpeDesc.textContent=rep.label||'';
+function drawDebug(res){
+  const b=$('#debug-box'); if(!b) return;
+  const i=seg?seg.T.length-1:-1;
+  b.textContent=[
+    'fps   '+fps,
+    'score '+(tracker.ok?tracker.score.toFixed(2):'—'),
+    'r     '+(tracker.ok?tracker.r.toFixed(1)+'px':'—'),
+    'y     '+(i>=0?(seg.Y[i]*100).toFixed(1)+'cm':'—'),
+    'v     '+(i>2?seg.vel(i-2).toFixed(2)+'m/s':'—'),
+    'dir   '+(seg?seg.dir:'—')+'  ext '+(seg?seg.ext.length:0),
+  ].join('\n');
 }
 
-function addRepRow(rep){
-  const tr=document.createElement('tr');
-  const cls=rep.rpe>=9?'rpe-high':rep.rpe>=8?'rpe-med':'rpe-ok';
-  tr.innerHTML=`<td>Rep ${rep.n}</td><td>${rep.totalDur.toFixed(2)}</td><td class="${cls}">${rep.rpe}</td>`;
-  repTbody.prepend(tr);
+// ── UI helpers ───────────────────────────────────────────
+const PH={lost:['Lost — 다시 탭','lost'],down:['Descending','down'],up:['Ascending','up'],bottom:['Bottom','bottom'],hold:['Hold','']};
+function setPhase(p){const [t,c]=PH[p]||['Ready',''];const el=$('#phase-badge');if(el.textContent!==t){el.textContent=t;el.className=c;}}
+let toastT;
+function toast(msg,ms=2500){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),ms);}
+const rpeCls=r=>r>=9?'rpe-high':r>=8?'rpe-med':'rpe-ok';
+function updateTargetUI(){
+  $('#tap-hint').style.display=tracker.ok?'none':'block';
+  $('#radius-ctl').classList.toggle('visible',tracker.ok&&!active);
+  $('#track-label').textContent=tracker.ok?`PLATE ⌀${cfg.plate}`:'NO TARGET';
+  $('#track-sub').textContent=tracker.ok?'탭하면 다시 선택':'Plate tracking';
 }
 
-function resetUI(){
-  tracker.reset();
-  liveRpe=null; liveRepNum=0;
-  repTbody.innerHTML='';
-  mReps.textContent='0'; mTime.textContent='—'; mAvgRpe.textContent='—'; mMean.textContent='—';
-  rpeVal.textContent='—'; rpeDesc.textContent='—'; rpeFill.style.width='0%';
-  btnStart.textContent='▶ Start'; btnStart.classList.remove('stopping');
-  phaseBadge.textContent='Ready'; phaseBadge.className='';
-  autostopRing.classList.remove('visible');
+function renderReps(){
+  const reps=seg?seg.reps:[];
+  $('#m-reps').textContent=reps.length;
+  const tb=$('#rep-tbody'); tb.innerHTML='';
+  [...reps].reverse().forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.n}${r.grind?' ⚠':''}</td><td>${r.mcv.toFixed(2)}</td><td>${r.tUp.toFixed(2)}</td><td>${r.total.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
+    tb.appendChild(tr);
+  });
+  if(!reps.length){['#m-mcv','#m-loss','#m-avg'].forEach(s=>$(s).textContent='—');$('#rpe-val').textContent='—';$('#rpe-desc').textContent='—';$('#rpe-fill').style.width='0%';return;}
+  const last=reps[reps.length-1], best=Math.max(...reps.map(r=>r.mcv));
+  const loss=best>0?Math.max(0,(best-last.mcv)/best*100):0;
+  const avg=reps.reduce((s,r)=>s+r.rpe,0)/reps.length;
+  $('#m-mcv').textContent=last.mcv.toFixed(2);
+  $('#m-loss').textContent=loss.toFixed(0)+'%';
+  $('#m-loss').className='metric-val '+(loss>=30?'danger':loss>=15?'acc':'');
+  $('#m-avg').textContent=avg.toFixed(1);
+  $('#rpe-val').textContent=last.rpe.toFixed(1);
+  $('#rpe-desc').textContent=RPE_LABEL(last.rpe);
+  $('#rpe-fill').style.width=Math.min(100,(last.rpe-4)/6*100)+'%';
+  $('#rpe-fill').style.background=last.rpe>=9?'#e05555':last.rpe>=8?'#ffc107':'var(--acc)';
 }
-
-// ── Countdown ─────────────────────────────────────────────
-function startCountdown(){
-  if(countingDown) return;
-  countingDown=true; btnStart.disabled=true;
-  let n=3; cdNum.textContent=n;
-  cdOverlay.classList.add('visible');
-  const t=setInterval(()=>{
-    if(--n>0){cdNum.textContent=n;}
-    else{
-      clearInterval(t);
-      cdOverlay.classList.remove('visible');
-      countingDown=false; btnStart.disabled=false;
-      tracking=true;
-      lastMoveTime=performance.now();
-      btnStart.textContent='⏸ Stop'; btnStart.classList.add('stopping');
-      if(autoRecord&&!isRecording) startRec();
-      detectLoop();
-    }
-  },1000);
-}
-
-// ── Stop set ──────────────────────────────────────────────
-function stopSet(auto=false){
-  tracking=false; cancelAnimationFrame(rafId);
-  btnStart.textContent='▶ Start'; btnStart.classList.remove('stopping');
-  phaseBadge.textContent='Ready'; phaseBadge.className='';
-  autostopRing.classList.remove('visible');
-  if(isRecording) stopRec();
-  if(tracker.history.length>0){
-    setNum++;
-    const h=tracker.history;
-    const maxRpe=Math.max(...h.map(r=>r.rpe));
-    const avgDur=(h.reduce((s,r)=>s+r.totalDur,0)/h.length).toFixed(2);
-    setHistory.unshift({setNum,ex:EX[curEx].label,reps:h.length,maxRpe,avgDur,
-      weight:weightKg?`${weightKg}${weightUnit}`:''});
-    renderSetsTab();
-    showToast((auto?'⏱ ':'')+`Set ${setNum} — ${h.length} reps, RPE ${maxRpe}`);
-  }
-  releaseWakeLock();
-}
-
-// ── Recording (canvas composite — no popup) ───────────────
-// Draws video + pose overlay + UI text onto recCanvas each frame
-// then captureStream() from recCanvas → MediaRecorder
-// One stream, no second camera open, no flicker
-
-let _recRaf=null;
-
-function getMime(){
-  for(const m of['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']){
-    try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}
-  }
-  return '';
-}
-
-function startRec(){
-  if(isRecording||!stream) return;
-  chunks=[];
-
-  // Size recCanvas to match camera
-  const W=video.videoWidth||1280;
-  const H=video.videoHeight||720;
-  recCanvas.width=W; recCanvas.height=H;
-
-  // Prime canvas with one frame so captureStream gets a live track
-  try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
-
-  let recStream;
-  try{
-    recStream=recCanvas.captureStream(30);
-    const t=recStream.getVideoTracks()[0];
-    if(!t||t.readyState==='ended') throw new Error('empty');
-  }catch(e){
-    // Fallback: raw camera stream
-    recStream=stream;
-  }
-
-  const mime=getMime();
-  let mr;
-  try{mr=new MediaRecorder(recStream,mime?{mimeType:mime}:{});}
-  catch(e){try{mr=new MediaRecorder(recStream);}catch(e2){showToast('Rec not supported');return;}}
-
-  mr.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data);};
-  mr.onstop=saveRec;
-  mr.onerror=e=>{showToast('Rec error');isRecording=false;};
-  mr.start(200); // 200ms chunks for reliability
-  mediaRecorder=mr;
-  isRecording=true;
-
-  // Start composite loop
-  _startRecLoop(W,H);
-}
-
-function _startRecLoop(W,H){
-  if(_recRaf) cancelAnimationFrame(_recRaf);
-  function loop(){
-    if(!isRecording){_recRaf=null;return;}
-    _recRaf=requestAnimationFrame(loop);
-    // Draw camera frame
-    try{
-      if(facingMode==='user'){
-        recCtx.save();recCtx.scale(-1,1);
-        recCtx.drawImage(video,-W,0,W,H);
-        recCtx.restore();
-      } else {
-        recCtx.drawImage(video,0,0,W,H);
-      }
-    }catch(e){}
-    // Draw pose overlay (skeleton + tracking dots from main canvas)
-    try{
-      if(canvas.width>0&&canvas.height>0)
-        recCtx.drawImage(canvas,0,0,W,H);
-    }catch(e){}
-    // Draw UI text overlay
-    _drawUIOverlay(W,H);
-  }
-  loop();
-}
-
-function _drawUIOverlay(W,H){
-  const fs=Math.max(16,Math.round(H*0.032));
-  const pad=14;
-  recCtx.save();
-  recCtx.font=`700 ${fs}px 'Space Mono',monospace`;
-  recCtx.textBaseline='top';
-
-  // Top-left: exercise + avg RPE
-  const repCount=tracker.history.length;
-  const avgRpe=repCount?(tracker.history.reduce((s,r)=>s+r.rpe,0)/repCount).toFixed(1):'—';
-  const ex=EX[curEx].label;
-  const l1=ex, l2=`Avg RPE: ${avgRpe}`;
-  const lw=Math.max(recCtx.measureText(l1).width,recCtx.measureText(l2).width)+20;
-  recCtx.fillStyle='rgba(0,0,0,0.6)';
-  _rrect(recCtx,pad,pad,lw,fs*2+20,6);
-  recCtx.fill();
-  recCtx.fillStyle='#e06c00'; recCtx.fillText(l1,pad+10,pad+6);
-  recCtx.fillStyle='#00e5c8'; recCtx.fillText(l2,pad+10,pad+10+fs);
-
-  // Top-right: rep N + RPE
-  if(liveRepNum>0&&liveRpe!==null){
-    const r1=`Rep ${liveRepNum}`;
-    const r2=`RPE ${liveRpe}`;
-    const rw=Math.max(recCtx.measureText(r1).width,recCtx.measureText(r2).width)+20;
-    const rx=W-pad-rw;
-    recCtx.fillStyle='rgba(0,0,0,0.6)';
-    _rrect(recCtx,rx,pad,rw,fs*2+20,6);
-    recCtx.fill();
-    recCtx.fillStyle='#f0f0f0'; recCtx.fillText(r1,rx+10,pad+6);
-    const rc=liveRpe>=9?'#e05555':liveRpe>=8?'#ffc107':liveRpe>=7?'#e06c00':'#00e5c8';
-    recCtx.fillStyle=rc; recCtx.fillText(r2,rx+10,pad+10+fs);
-  }
-
-  recCtx.restore();
-}
-
-function _rrect(ctx,x,y,w,h,r){
-  ctx.beginPath();
-  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
-  ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);
-  ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);
-  ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);
-  ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
-}
-
-function stopRec(){
-  if(!isRecording||!mediaRecorder) return;
-  isRecording=false;
-  if(_recRaf){cancelAnimationFrame(_recRaf);_recRaf=null;}
-  try{
-    if(mediaRecorder.state==='recording'){
-      mediaRecorder.requestData();
-      setTimeout(()=>{try{if(mediaRecorder.state!=='inactive')mediaRecorder.stop();}catch(e){}},400);
-    }
-  }catch(e){try{mediaRecorder.stop();}catch(e2){}}
-}
-
-async function saveRec(){
-  if(!chunks.length){showToast('No video data');return;}
-  const mime=mediaRecorder?.mimeType||'video/webm';
-  const webmBlob=new Blob(chunks,{type:mime});
-  const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
-  const exName=EX[curEx].label;
-
-  // Try FFmpeg webm→mp4 conversion
-  if(window.FFmpeg&&window.crossOriginIsolated){
-    showToast('MP4 변환 중…',30000);
-    try{
-      const {createFFmpeg,fetchFile}=FFmpeg;
-      const ff=createFFmpeg({log:false});
-      await ff.load();
-      ff.FS('writeFile','input.webm',await fetchFile(webmBlob));
-      await ff.run(
-        '-i','input.webm',
-        '-c:v','libx264',
-        '-preset','ultrafast',
-        '-crf','28',
-        '-an',
-        '-movflags','+faststart',
-        'output.mp4'
-      );
-      const data=ff.FS('readFile','output.mp4');
-      const mp4Blob=new Blob([data.buffer],{type:'video/mp4'});
-      _download(mp4Blob,`tatelift_${exName}_${ts}.mp4`);
-      showToast('✓ MP4 저장');
-      return;
-    }catch(e){
-      console.error('FFmpeg failed:',e);
-      showToast('변환 실패 — webm 저장');
-    }
-  }
-
-  // Fallback: save as webm with .mp4 name
-  _download(webmBlob,`tatelift_${exName}_${ts}.mp4`);
-  showToast('✓ 저장 시작');
-}
-
-function _download(blob,name){
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download=name;
-  a.style.cssText='position:fixed;opacity:0;pointer-events:none;';
-  document.body.appendChild(a);
-  requestAnimationFrame(()=>{
-    a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
-    setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},30000);
+function renderSets(){
+  const tb=$('#sets-tbody'); tb.innerHTML='';
+  setHistory.slice().reverse().forEach(s=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${s.n}</td><td>${s.ex}</td><td>${s.wt||'—'}</td><td>${s.reps}</td><td class="${rpeCls(s.rpe)}">${s.rpe.toFixed(1)}</td><td>${s.ai!=null?s.ai:'—'}</td><td>${s.you!=null?s.you:'—'}</td>`;
+    tb.appendChild(tr);
   });
 }
 
-// ── Wake Lock ─────────────────────────────────────────────
-async function requestWakeLock(){
-  if(!useWakeLock||!('wakeLock' in navigator)) return;
-  try{wakeLockSentinel=await navigator.wakeLock.request('screen');}catch(e){}
+// ── Set lifecycle ────────────────────────────────────────
+function onRep(rep,isNew){
+  lastRepWall=performance.now();
+  renderReps();
+  if(isNew){ toast(`Rep ${rep.n} ✓  ${rep.mcv.toFixed(2)} m/s — RPE ${rep.rpe.toFixed(1)}`); if(navigator.vibrate) navigator.vibrate(40); }
 }
-async function releaseWakeLock(){
-  if(wakeLockSentinel){try{await wakeLockSentinel.release();}catch(e){}wakeLockSentinel=null;}
+function startCountdown(){
+  if(counting) return;
+  if(!tracker.ok){toast('먼저 바벨 플레이트를 탭하세요');return;}
+  counting=true; $('#btn-start').disabled=true;
+  let n=3; $('#countdown-num').textContent=n; $('#countdown-overlay').classList.add('visible');
+  const iv=setInterval(()=>{
+    if(--n>0){$('#countdown-num').textContent=n;return;}
+    clearInterval(iv); $('#countdown-overlay').classList.remove('visible');
+    counting=false; $('#btn-start').disabled=false;
+    beginSet();
+  },1000);
 }
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'&&useWakeLock)requestWakeLock();
-});
+function beginSet(){
+  seg=new RepSeg(curLift,onRep);
+  t0=lastT; y0=tracker.cy; frames.length=0;
+  active=true; lastRepWall=lastMoveWall=performance.now();
+  $('#btn-start').textContent='⏸ Stop'; $('#btn-start').classList.add('stopping');
+  updateTargetUI(); renderReps();
+  if(cfg.rec) startRec();
+  requestWake();
+}
+function checkAutoStop(v){
+  const ring=$('#autostop-ring');
+  if(!seg||!seg.reps.length){ring.classList.remove('visible');return;}
+  const idle=(performance.now()-Math.max(lastRepWall,lastMoveWall))/1000;
+  ring.classList.add('visible');
+  $('#autostop-arc').style.strokeDashoffset=94.2-Math.min(1,idle/cfg.stopSec)*94.2;
+  if(idle>=cfg.stopSec) stopSet(true);
+}
+function stopSet(auto=false){
+  if(!active) return;
+  active=false;
+  $('#btn-start').textContent='▶ Start'; $('#btn-start').classList.remove('stopping');
+  $('#autostop-ring').classList.remove('visible'); setPhase('hold');
+  updateTargetUI();
+  if(isRecording) stopRec();
+  if(auto) alertStop();
+  releaseWake();
+  const reps=seg?seg.reps:[];
+  if(!reps.length){toast('렙이 감지되지 않았어요');return;}
+  setNum++;
+  const hardest=reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a);
+  const entry={n:setNum,ex:LIFTS[curLift].label,lift:curLift,wt:weightKg?`${weightKg}${weightUnit}`:'',reps:reps.length,rpe:Math.max(...reps.map(r=>r.rpe)),slowMcv:hardest.vAdj,ai:null,you:null,time:Date.now()};
+  setHistory.push(entry); store.set('sets',setHistory.slice(-100)); renderSets();
+  curSetData={entry,reps:reps.map(stripRep),seg};
+  openResult(curSetData);
+  if(cfg.ai&&cfg.worker) runAI(curSetData);
+}
+const stripRep=r=>{const o={};for(const k in r) if(k[0]!=='_') o[k]=r[k];return o;};
+function resetSet(){
+  active=false; counting=false; seg=null;
+  if(isRecording) stopRec();
+  $('#btn-start').textContent='▶ Start'; $('#btn-start').classList.remove('stopping'); $('#btn-start').disabled=false;
+  $('#countdown-overlay').classList.remove('visible'); $('#autostop-ring').classList.remove('visible');
+  setPhase('hold'); renderReps(); updateTargetUI();
+}
 
-// ── Alert (vibrate + beep) ────────────────────────────────
-function alertAutoStop(){
+function alertStop(){
   if(navigator.vibrate) navigator.vibrate([300,120,300,120,300]);
   try{
     const ac=new(window.AudioContext||window.webkitAudioContext)();
-    [0,0.55,1.1].forEach(offset=>{
-      const o=ac.createOscillator(),g=ac.createGain();
-      o.connect(g);g.connect(ac.destination);
-      o.type='sine';o.frequency.value=880;
-      g.gain.setValueAtTime(0.6,ac.currentTime+offset);
-      g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+offset+0.3);
-      o.start(ac.currentTime+offset);o.stop(ac.currentTime+offset+0.35);
-    });
+    [0,0.55,1.1].forEach(o=>{const os=ac.createOscillator(),g=ac.createGain();os.connect(g);g.connect(ac.destination);os.frequency.value=880;
+      g.gain.setValueAtTime(0.6,ac.currentTime+o);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+o+0.3);os.start(ac.currentTime+o);os.stop(ac.currentTime+o+0.35);});
   }catch(e){}
 }
+async function requestWake(){ if(!cfg.wake||!('wakeLock' in navigator)) return; try{wakeLock=await navigator.wakeLock.request('screen');}catch(e){} }
+async function releaseWake(){ if(wakeLock){try{await wakeLock.release();}catch(e){} wakeLock=null;} }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&active) requestWake(); });
 
-// ── Controls ──────────────────────────────────────────────
-btnStart.addEventListener('click',()=>{
-  if(!poseLandmarker) return;
-  if(tracking){
-    stopSet();
-  } else {
-    if(!camOn) return;
-    resetUI();
-    requestWakeLock();
-    startCountdown();
-  }
-});
-
-btnReset.addEventListener('click',()=>{
-  tracking=false; cancelAnimationFrame(rafId);
-  if(isRecording) stopRec();
-  resetUI();
-  releaseWakeLock();
-  showToast('Reset');
-});
-
-btnCamFlip.addEventListener('click',async()=>{
-  facingMode=facingMode==='user'?'environment':'user';
-  try{await startCamera();showToast(facingMode==='user'?'Front cam':'Rear cam');}
-  catch{showToast('Camera flip failed');}
-});
-
-btnCamOff.addEventListener('click',()=>{
-  camOn=!camOn;
-  if(camOn){
-    video.play(); camOffScreen.classList.remove('visible');
-    btnCamOff.classList.remove('off'); canvas.style.display='';
-  }else{
-    video.pause(); camOffScreen.classList.add('visible');
-    btnCamOff.classList.add('off'); canvas.style.display='none';
-    if(tracking){tracking=false;cancelAnimationFrame(rafId);btnStart.textContent='▶ Start';btnStart.classList.remove('stopping');}
-  }
-});
-
-exSelect.addEventListener('change',()=>{
-  curEx=exSelect.value;
-  trackLabel.textContent=EX[curEx].trackName;
-  showToast(EX[curEx].label);
-});
-
-weightIn.addEventListener('input',()=>{
-  const v=parseFloat(weightIn.value);
-  weightKg=(!isNaN(v)&&v>0)?(weightUnit==='kg'?v:+(v*0.453592).toFixed(1)):null;
-});
-
-document.querySelectorAll('.unit-seg-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    document.querySelectorAll('.unit-seg-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active'); weightUnit=btn.dataset.unit;
-    const v=parseFloat(weightIn.value);
-    if(!isNaN(v)&&v>0){
-      const c=weightUnit==='kg'?+(v*0.453592).toFixed(1):+(v*2.20462).toFixed(1);
-      weightIn.value=c; weightKg=weightUnit==='kg'?c:+(c*0.453592).toFixed(1);
-    }
-    weightIn.placeholder=`Weight (${weightUnit})`;
-  });
-});
-
-document.querySelectorAll('.tab-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    const tab=btn.dataset.tab;
-    $('#tab-current').classList.toggle('visible',tab==='current');
-    $('#tab-sets').classList.toggle('visible',tab==='sets');
-  });
-});
-
-// Settings
-$('#btn-settings').addEventListener('click',()=>{
-  $('#settings-drawer').classList.toggle('open');
-  $('#btn-settings').classList.toggle('active');
-});
-$('#settings-drawer').addEventListener('click',e=>{
-  if(e.target===$('#settings-drawer')){
-    $('#settings-drawer').classList.remove('open');
-    $('#btn-settings').classList.remove('active');
-  }
-});
-$('#settings-close-btn').addEventListener('click',()=>{
-  $('#settings-drawer').classList.remove('open');
-  $('#btn-settings').classList.remove('active');
-});
-$('#tog-record').addEventListener('change',e=>{autoRecord=e.target.checked;});
-$('#tog-wakelock').addEventListener('change',e=>{useWakeLock=e.target.checked;if(useWakeLock)requestWakeLock();else releaseWakeLock();});
-$('#tog-autostop').addEventListener('change',e=>{useAutoStop=e.target.checked;});
-$('#autostop-sec').addEventListener('change',e=>{autoStopSec=Math.max(2,Math.min(30,+e.target.value||5));});
-
-// Analyzer
-function openAnalyzer(){
-  const h=tracker.history;
-  const mean=h.length?h.reduce((s,r)=>s+r.totalDur,0)/h.length:0;
-  const maxRpe=h.length?Math.max(...h.map(r=>r.rpe)):0;
-  const avgRpe=h.length?(h.reduce((s,r)=>s+r.rpe,0)/h.length).toFixed(1):0;
-  $('#analyzer-metrics').innerHTML=[
-    {v:h.length,l:'Reps',c:'var(--acc)'},
-    {v:mean?mean.toFixed(2):'—',l:'Avg(s)',c:'var(--text)'},
-    {v:maxRpe||'—',l:'Peak RPE',c:maxRpe>=9?'var(--danger)':maxRpe>=8?'#ffc107':'var(--text)'},
-    {v:avgRpe||'—',l:'Avg RPE',c:'var(--teal)'},
-  ].map(m=>`<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:10px 6px;text-align:center"><div style="font-family:var(--fm);font-size:22px;font-weight:700;color:${m.c}">${m.v}</div><div style="font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-top:3px">${m.l}</div></div>`).join('');
-  $('#analyzer-reps').innerHTML=[...h].reverse().map(r=>{
-    const cls=r.rpe>=9?'rpe-high':r.rpe>=8?'rpe-med':'rpe-ok';
-    return `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">Rep ${r.n}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${r.totalDur.toFixed(2)}s</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="${cls}">${r.rpe}</td></tr>`;
-  }).join('');
-  $('#analyzer-sets').innerHTML=setHistory.map(s=>{
-    const cls=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
-    return `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text3)">${s.setNum}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border)">${s.ex}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${s.reps}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right" class="${cls}">${s.maxRpe}</td><td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right">${s.weight||'—'}</td></tr>`;
-  }).join('');
-  $('#analyzer-overlay').classList.add('open');
-}
-$('#btn-expand').addEventListener('click',openAnalyzer);
-$('#analyzer-close').addEventListener('click',()=>$('#analyzer-overlay').classList.remove('open'));
-
-function renderSetsTab(){
-  setsTbody.innerHTML='';
-  setHistory.forEach(s=>{
+// ── Result sheet + personal calibration ──────────────────
+function openResult(d){
+  const {entry,reps}=d;
+  $('#res-title').textContent=`SET ${entry.n} — ${entry.ex}${entry.wt?' '+entry.wt:''}`;
+  $('#res-reps').textContent=reps.length;
+  $('#res-trk').textContent=entry.rpe.toFixed(1);
+  $('#res-ai').textContent=cfg.ai&&cfg.worker?'…':'—';
+  const tb=$('#res-reps-body'); tb.innerHTML='';
+  reps.forEach(r=>{
     const tr=document.createElement('tr');
-    const cls=s.maxRpe>=9?'rpe-high':s.maxRpe>=8?'rpe-med':'rpe-ok';
-    tr.innerHTML=`<td>${s.setNum}</td><td>${s.ex}</td><td>${s.reps}</td><td class="${cls}">${s.maxRpe}</td><td>${s.weight||'—'}</td>`;
-    setsTbody.appendChild(tr);
+    tr.innerHTML=`<td>${r.n}${r.grind?' ⚠':''}</td><td>${r.mcv.toFixed(2)}</td><td>${r.tDown!=null?r.tDown.toFixed(1):'—'}</td><td>${r.tPause!=null?r.tPause.toFixed(1):'—'}</td><td>${r.tUp.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
+    tb.appendChild(tr);
   });
+  $('#res-ai-box').innerHTML=cfg.ai&&cfg.worker?'<span class="spinner"></span><span class="muted">Claude가 세트를 분석하는 중…</span>':'<span class="muted">설정에서 AI 세트 분석을 켜고 Worker URL을 입력하면 분석이 표시돼요.</span>';
+  const chips=$('#res-chips'); chips.innerHTML='';
+  for(let r=6;r<=10;r+=0.5){
+    const b=document.createElement('button'); b.className='chip'; b.textContent=r.toFixed(1);
+    b.onclick=()=>{
+      chips.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel')); b.classList.add('sel');
+      entry.you=r; store.set('sets',setHistory.slice(-100)); renderSets();
+      const arr=calib[entry.lift]||(calib[entry.lift]=[]);
+      const prev=arr.findIndex(p=>p.set===entry.time); const pt={v:entry.slowMcv,rpe:r,set:entry.time};
+      if(prev>=0) arr[prev]=pt; else arr.push(pt);
+      calib[entry.lift]=arr.slice(-60); store.set('calib',calib); updateCalibInfo();
+      toast(`저장 — ${LIFTS[entry.lift].label} 보정 ${calib[entry.lift].length}개`);
+    };
+    chips.appendChild(b);
+  }
+  $('#result-bg').classList.add('open');
+}
+$('#res-close').onclick=()=>$('#result-bg').classList.remove('open');
+function updateCalibInfo(){
+  const parts=Object.keys(LIFTS).map(k=>{const n=(calib[k]||[]).length;return n?`${LIFTS[k].label} ${n}`:null;}).filter(Boolean);
+  $('#s-calib-info').textContent=parts.length?parts.join(' · ')+' (3개 이상부터 적용)':'아직 없음 — 세트 후 체감 RPE를 탭하세요';
 }
 
-// Toast
-let toastT;
-function showToast(msg,dur=2500){
-  const t=$('#toast');t.textContent=msg;t.classList.add('show');
-  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),dur);
+// ── Frame ring buffer (for AI review) ────────────────────
+const frames=[]; let lastCap=-1;
+const capCanvas=document.createElement('canvas'),capCtx=capCanvas.getContext('2d');
+function captureFrame(tRel){
+  if(!(cfg.ai&&cfg.worker)) return;
+  if(tRel-lastCap<0.2&&tRel>=lastCap) return; lastCap=tRel;
+  const vw=video.videoWidth,vh=video.videoHeight,cw=384,ch=Math.round(cw*vh/vw);
+  capCanvas.width=cw; capCanvas.height=ch;
+  capCtx.drawImage(video,0,0,cw,ch);
+  if(tracker.ok){const k=cw/WW;capCtx.strokeStyle='#00e5c8';capCtx.lineWidth=2;capCtx.beginPath();capCtx.arc(tracker.cx*k,tracker.cy*k,tracker.r*k,0,Math.PI*2);capCtx.stroke();}
+  const url=capCanvas.toDataURL('image/jpeg',0.6);
+  frames.push({t:tRel,data:url.slice(url.indexOf(',')+1)});
+  while(frames.length>300) frames.shift();
 }
-function setStatus(msg){loadStatus.textContent=msg;}
+function frameNear(t){let best=null,bd=1e9;frames.forEach(f=>{const d=Math.abs(f.t-t);if(d<bd){bd=d;best=f;}});return best;}
 
-window.addEventListener('resize',resizeCanvas);
+// ── AI review via Cloudflare Worker ──────────────────────
+async function runAI(d){
+  const {entry,reps,seg:s}=d;
+  // key frames: first rep start, hardest rep bottom / sticking / lockout, last frame
+  const hard=reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a);
+  const picks=[];
+  const add=(t,label)=>{const f=frameNear(t);if(f&&!picks.some(p=>p.f===f))picks.push({f,label});};
+  add(reps[0].tStart+0.1,'rep 1 leaving the bottom');
+  add(hard.tBottom,`rep ${hard.n} bottom`);
+  if(hard.grind&&hard.stickPct!=null){ add(hard.tStart+(hard.tEnd-hard.tStart)*0.5,`rep ${hard.n} mid-ascent (slowest point ~${hard.stickPct}% ROM)`); }
+  else add((hard.tStart+hard.tEnd)/2,`rep ${hard.n} mid-ascent`);
+  add(hard.tEnd,`rep ${hard.n} lockout`);
+  if(reps.length>1){const last=reps[reps.length-1]; if(last!==hard) add((last.tStart+last.tEnd)/2,`rep ${last.n} mid-ascent`);}
+  // bar height series at ~15 Hz
+  const series=[]; let lt=-1;
+  for(let i=0;i<s.T.length;i++){ if(s.T[i]-lt>=0.066){lt=s.T[i];series.push([+s.T[i].toFixed(2),s.ok[i]?+(s.Y[i]*100).toFixed(1):null]);} }
+  const payload={
+    lift:curLiftName(entry.lift), weight:entry.wt||null, plateDiameterCm:cfg.plate,
+    reps, trackerSetRpe:entry.rpe,
+    series, // [time s, bar height cm (up = positive)]
+    personalCalibration:(calib[entry.lift]||[]).slice(-12).map(p=>({slowestRepRomNormalisedVelocity:p.v,reportedRpe:p.rpe})),
+    note:'vAdj = mcv * sqrt(refROM/rom), refROM '+LIFTS[entry.lift].refROM+' m. Calibration uses vAdj.',
+    frames:picks.map(p=>({t:+p.f.t.toFixed(2),label:p.label,data:p.f.data})),
+  };
+  try{
+    const r=await fetch(cfg.worker.replace(/\/$/,'')+'/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+    const out=parseAI(j.text);
+    showAI(entry,out);
+  }catch(e){
+    $('#res-ai').textContent='—';
+    $('#res-ai-box').innerHTML=`<span class="muted">AI 분석 실패: ${escapeHtml(e.message)}</span>`;
+  }
+}
+const curLiftName=k=>({BP:'bench press',SQ:'back squat',DL:'deadlift',OHP:'overhead press',RDL:'romanian deadlift'})[k];
+function parseAI(text){
+  const m=text&&text.match(/\{[\s\S]*\}/); if(!m) throw new Error('응답 형식 오류');
+  return JSON.parse(m[0]);
+}
+const escapeHtml=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+function showAI(entry,o){
+  if(typeof o.set_rpe==='number'){ entry.ai=o.set_rpe; $('#res-ai').textContent=o.set_rpe.toFixed(1); store.set('sets',setHistory.slice(-100)); renderSets(); }
+  let h='';
+  if(o.summary) h+=`<div>${escapeHtml(o.summary)}</div>`;
+  if(Array.isArray(o.reps)&&o.reps.length) h+=`<div class="muted" style="margin-top:6px">${o.reps.map(r=>`Rep ${r.n}: RPE ${r.rpe}${r.note?' — '+escapeHtml(r.note):''}`).join('<br>')}</div>`;
+  if(o.sticking_point) h+=`<div style="margin-top:6px"><b>스티킹:</b> ${escapeHtml(o.sticking_point)}</div>`;
+  if(Array.isArray(o.form_notes)&&o.form_notes.length) h+=`<ul style="margin-top:6px">${o.form_notes.map(n=>`<li>${escapeHtml(n)}</li>`).join('')}</ul>`;
+  if(o.tracking_issues) h+=`<div class="muted" style="margin-top:6px">추적: ${escapeHtml(o.tracking_issues)}</div>`;
+  if(o.confidence) h+=`<div class="muted" style="margin-top:6px">신뢰도: ${escapeHtml(o.confidence)}${o.rir!=null?' · RIR '+o.rir:''}</div>`;
+  $('#res-ai-box').innerHTML=h||'<span class="muted">결과 없음</span>';
+  // pre-select AI suggestion hint
+  const chips=[...$('#res-chips').children];
+  chips.forEach(c=>{ if(+c.textContent===Math.round((o.set_rpe||0)*2)/2) c.style.borderColor='var(--teal)'; });
+}
 
-// Boot
-initMP();
-requestWakeLock();
+// ── Recording (canvas composite: video + overlay + stats) ─
+let mediaRecorder=null,chunks=[],isRecording=false,recRaf=null;
+const recCanvas=document.createElement('canvas'),recCtx=recCanvas.getContext('2d');
+function recMime(){for(const m of['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}return '';}
+function startRec(){
+  if(isRecording||!stream) return;
+  chunks=[]; const W=video.videoWidth||1280,H=video.videoHeight||720;
+  recCanvas.width=W; recCanvas.height=H;
+  try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
+  let rs; try{rs=recCanvas.captureStream(30);if(!rs.getVideoTracks().length)throw 0;}catch(e){rs=stream;}
+  const mime=recMime();
+  try{mediaRecorder=new MediaRecorder(rs,mime?{mimeType:mime}:{});}catch(e){try{mediaRecorder=new MediaRecorder(rs);}catch(e2){toast('녹화 미지원');return;}}
+  mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+  mediaRecorder.onstop=saveRec;
+  mediaRecorder.start(500); isRecording=true;
+  const loopRec=()=>{
+    if(!isRecording){recRaf=null;return;} recRaf=requestAnimationFrame(loopRec);
+    try{ if(facingMode==='user'){recCtx.save();recCtx.scale(-1,1);recCtx.drawImage(video,-W,0,W,H);recCtx.drawImage(overlay,-W,0,W,H);recCtx.restore();}
+         else {recCtx.drawImage(video,0,0,W,H);recCtx.drawImage(overlay,0,0,W,H);} }catch(e){}
+    drawRecText(W,H);
+  };
+  loopRec();
+}
+function drawRecText(W,H){
+  const reps=seg?seg.reps:[], fs=Math.max(16,Math.round(Math.min(W,H)*0.045)), pad=Math.round(fs*0.6);
+  recCtx.save(); recCtx.font=`700 ${fs}px 'Space Mono',monospace`; recCtx.textBaseline='top';
+  const avg=reps.length?(reps.reduce((s,r)=>s+r.rpe,0)/reps.length).toFixed(1):'—';
+  const L=[`${LIFTS[curLift].label}${weightKg?' '+weightKg+weightUnit:''}`,`Avg RPE ${avg}`];
+  const box=(x,lines,cols)=>{const w=Math.max(...lines.map(l=>recCtx.measureText(l).width))+pad*2;const bx=x<0?W-pad-w:x;
+    recCtx.fillStyle='rgba(0,0,0,0.6)';recCtx.fillRect(bx,pad,w,lines.length*fs*1.25+pad);
+    lines.forEach((l,i)=>{recCtx.fillStyle=cols[i];recCtx.fillText(l,bx+pad,pad+pad/2+i*fs*1.25);});};
+  box(pad,L,['#e06c00','#00e5c8']);
+  if(reps.length){const r=reps[reps.length-1];box(-1,[`Rep ${r.n}`,`RPE ${r.rpe.toFixed(1)}`,`${r.mcv.toFixed(2)} m/s`],['#f0f0f0',r.rpe>=9?'#e05555':r.rpe>=8?'#ffc107':'#00e5c8','#a0a0a0']);}
+  recCtx.restore();
+}
+function stopRec(){
+  if(!isRecording) return; isRecording=false;
+  try{ if(mediaRecorder.state==='recording'){mediaRecorder.requestData();setTimeout(()=>{try{mediaRecorder.stop();}catch(e){}},300);} }catch(e){}
+}
+function saveRec(){
+  if(!chunks.length){toast('No video data');return;}
+  const mime=mediaRecorder.mimeType||'video/webm', ext=mime.includes('mp4')?'mp4':'webm';
+  const blob=new Blob(chunks,{type:mime}), url=URL.createObjectURL(blob);
+  const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
+  const a=document.createElement('a'); a.href=url; a.download=`tatelift_${LIFTS[curLift].label}_${ts}.${ext}`;
+  a.style.cssText='position:fixed;opacity:0;'; document.body.appendChild(a);
+  requestAnimationFrame(()=>{a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url);},30000);});
+}
+
+// ── Events ───────────────────────────────────────────────
+$('#camera-wrap').addEventListener('pointerdown',ev=>{
+  if(ev.target.closest('button')) return;
+  if(active||counting) { if(!(tracker.ok&&tracker.lost>15)) return; } // allow re-tap only when lost mid-set
+  const p=tapToVideo(ev); if(!p||!grabGray()) return;
+  const k=WW/video.videoWidth;
+  const keepR=active&&tracker.ok?tracker.r:null;
+  tracker.init(G,WW,WH,p.x*k,p.y*k); trail=[];
+  if(keepR) tracker.setRadius(keepR);          // keep scale stable mid-set
+  if(active&&seg&&seg.Y.length){                // continue height from last known value
+    let lastY=0; for(let i=seg.Y.length-1;i>=0;i--) if(seg.ok[i]){lastY=seg.Y[i];break;}
+    y0=tracker.cy+lastY/metersPerPx();
+  }
+  updateTargetUI();
+  toast(`플레이트 선택됨 — 원 크기가 안 맞으면 − / + 로 조절`);
+});
+$('#r-minus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*0.95);}};
+$('#r-plus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*1.05);}};
+$('#btn-start').onclick=()=>{ if(active) stopSet(false); else { $('#result-bg').classList.remove('open'); startCountdown(); } };
+$('#btn-reset').onclick=()=>{resetSet();toast('Reset');};
+$('#btn-cam-flip').onclick=async()=>{facingMode=facingMode==='user'?'environment':'user';try{await startCamera();}catch(e){toast('카메라 전환 실패');}};
+$('#btn-cam-off').onclick=()=>{
+  camOn=!camOn; $('#btn-cam-off').classList.toggle('off',!camOn); $('#cam-off-screen').classList.toggle('visible',!camOn);
+  if(camOn) video.play(); else {video.pause(); if(active) stopSet(false);}
+};
+$('#exercise-select').onchange=e=>{curLift=e.target.value; if(!active) {seg=null;renderReps();} toast(LIFTS[curLift].label);};
+$('#weight-in').oninput=e=>{const v=parseFloat(e.target.value);weightKg=(!isNaN(v)&&v>0)?v:null;};
+document.querySelectorAll('.unit-seg-btn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.unit-seg-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');weightUnit=b.dataset.unit;$('#weight-in').placeholder=`Weight (${weightUnit})`;
+});
+document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  $('#tab-cur').classList.toggle('visible',b.dataset.tab==='cur');$('#tab-sets').classList.toggle('visible',b.dataset.tab==='sets');
+});
+
+// settings
+function applyCfgToUI(){
+  $('#s-ai').checked=cfg.ai; $('#s-worker').value=cfg.worker; $('#s-plate').value=cfg.plate; $('#s-rec').checked=cfg.rec;
+  $('#s-stopsec').value=cfg.stopSec; $('#s-wake').checked=cfg.wake; $('#s-debug').checked=cfg.debug;
+  $('#debug-box').style.display=cfg.debug?'block':'none'; updateCalibInfo();
+}
+const saveCfg=()=>{store.set('cfg',cfg);updateTargetUI();$('#debug-box').style.display=cfg.debug?'block':'none';};
+$('#btn-settings').onclick=()=>{applyCfgToUI();$('#settings-bg').classList.add('open');};
+$('#settings-close').onclick=()=>$('#settings-bg').classList.remove('open');
+$('#settings-bg').addEventListener('click',e=>{if(e.target.id==='settings-bg')$('#settings-bg').classList.remove('open');});
+$('#s-ai').onchange=e=>{cfg.ai=e.target.checked;saveCfg();};
+$('#s-worker').onchange=e=>{cfg.worker=e.target.value.trim();saveCfg();};
+$('#s-plate').onchange=e=>{cfg.plate=Math.max(20,Math.min(50,+e.target.value||45));saveCfg();};
+$('#s-rec').onchange=e=>{cfg.rec=e.target.checked;saveCfg();};
+$('#s-stopsec').onchange=e=>{cfg.stopSec=Math.max(3,Math.min(30,+e.target.value||7));saveCfg();};
+$('#s-wake').onchange=e=>{cfg.wake=e.target.checked;saveCfg();};
+$('#s-debug').onchange=e=>{cfg.debug=e.target.checked;saveCfg();};
+$('#s-calib-reset').onclick=()=>{calib={};store.set('calib',calib);updateCalibInfo();toast('보정 데이터 초기화');};
+$('#s-test').onclick=async()=>{
+  cfg.worker=$('#s-worker').value.trim();saveCfg();
+  if(!cfg.worker){toast('Worker URL을 입력하세요');return;}
+  try{const r=await fetch(cfg.worker.replace(/\/$/,'')+'/ping');const j=await r.json();
+    toast(j.ok?(j.hasKey?'✓ 연결 성공 — API 키 확인됨':'연결됨, 하지만 API 키가 없어요'):'응답 오류',3500);}
+  catch(e){toast('연결 실패: '+e.message,3500);}
+};
+
+// ── Boot ─────────────────────────────────────────────────
+(async()=>{
+  applyCfgToUI(); renderSets(); updateTargetUI();
+  try{ await startCamera(); $('#loading-screen').style.display='none'; scheduleFrame(); }
+  catch(e){ $('#load-status').textContent='카메라를 열 수 없어요: '+e.message; }
+})();
 </script>
 </body>
 </html>
