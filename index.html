@@ -65,6 +65,9 @@ button{font-family:inherit;}
 #autostop-ring.visible{display:block;}
 
 #cam-controls{position:absolute;bottom:12px;left:14px;display:flex;gap:10px;z-index:5;transition:opacity .2s;}
+#zoom-chip{position:absolute;bottom:66px;left:50%;transform:translateX(-50%);z-index:5;display:none;padding:5px 12px;border-radius:999px;background:rgba(13,13,13,.75);border:1px solid var(--border);font:600 13px var(--fb);color:var(--yellow);pointer-events:none;}
+#zoom-chip.visible{display:block;}
+#camera-wrap{touch-action:none;}
 .cam-fab{width:44px;height:44px;border-radius:50%;background:rgba(13,13,13,0.75);border:2px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .cam-fab.off{background:var(--s3);color:var(--text3);}
 
@@ -194,7 +197,10 @@ table.t td:first-child{color:var(--text3);}
     <div id="cam-controls">
       <button class="cam-fab" id="btn-cam-off" aria-label="Camera on/off">📷</button>
       <button class="cam-fab" id="btn-cam-flip" aria-label="Flip camera">⟳</button>
+      <button class="cam-fab" id="btn-import" aria-label="Analyse a video">🎞</button>
     </div>
+    <div id="zoom-chip"></div>
+    <input type="file" id="file-in" accept="video/*" hidden/>
   </div>
 
   <section id="panel">
@@ -337,7 +343,7 @@ class PlateTracker{
     this.r=estimateRadius(G,W,H,cx,cy);
     this.cx=cx;this.cy=cy;this.vx=0;this.vy=0;
     this._makeTemplate(G); this.T0=this.T.slice(); this._makeColors();
-    this.score=1;this.lost=0;this.ok=true;this._q=[];
+    this.score=1;this.lost=0;this.ok=true;this._q=[];this.gy=cy;
   }
   setRadius(r){this.r=Math.max(6,r);}
   _makeTemplate(G){
@@ -405,8 +411,9 @@ class PlateTracker{
       }
     }
     let T=this.T;
-    if(this.lost>=2&&this.lost%2===0){                     // lost a while → scan the bar's vertical path with the original look
-      const col=this._search(G,this.cx,this.H/2,Math.round(this.r*0.7),Math.round(this.H/2),3,this.T0);
+    if(this.lost>=2&&this.lost%3===0){                     // lost a while → scan the bar's vertical path with the original look
+      const ry=Math.round(Math.min(this.H/2,this.r*3.5)), cy=Math.max(ry,Math.min(this.H-ry,this.gy));
+      const col=this._search(G,this.cx,cy,Math.round(this.r*0.7),ry,3,this.T0);
       if(col.s>c.s+0.03&&col.s>0.5){c=col;T=this.T0;}   // far jump → must be a clear match
     }
     let fb=-3,fx=c.x,fy=c.y;
@@ -432,7 +439,7 @@ class PlateTracker{
     }
     const nx=fx+ox, ny=fy+oy;
     if(this.lost>0){this.vx=0;this.vy=0;} else {this.vx=0.6*(nx-this.cx)+0.4*this.vx; this.vy=0.6*(ny-this.cy)+0.4*this.vy;}
-    this.cx=nx; this.cy=ny; this.lost=0;
+    this.cx=nx; this.cy=ny; this.lost=0; this.gy=ny;
     // slow template adaptation — only when the whole plate is clearly visible (never learn an occluder)
     if(cells.length===9&&Math.min(...cells)>0.5&&fb>0.72){
       const x0=Math.round(this.cx-this.tw/2),y0=Math.round(this.cy-this.th/2);
@@ -823,8 +830,10 @@ let wakeLock=null;
 // ── Camera ───────────────────────────────────────────────
 async function startCamera(){
   if(stream) stream.getTracks().forEach(t=>t.stop());
-  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode,width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}},audio:false});
+  if(fileMode) exitFileMode(false);
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode,width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});
   video.srcObject=stream;
+  setupZoom();
   video.style.transform=overlay.style.transform=facingMode==='user'?'scaleX(-1)':'none';
   await new Promise(r=>{if(video.readyState>=1)r();else video.onloadedmetadata=r;});
   await video.play().catch(()=>{});
@@ -847,9 +856,74 @@ function tapToVideo(ev){
   const r=$('#camera-wrap').getBoundingClientRect(), vw=video.videoWidth, vh=video.videoHeight;
   const s=Math.min(r.width/vw,r.height/vh), dw=vw*s, dh=vh*s, ox=(r.width-dw)/2, oy=(r.height-dh)/2;
   let x=(ev.clientX-r.left-ox)/s, y=(ev.clientY-r.top-oy)/s;
-  if(facingMode==='user') x=vw-x;
+  if(facingMode==='user'&&!fileMode) x=vw-x;
   if(x<0||y<0||x>vw||y>vh) return null;
   return {x,y};
+}
+
+// ── Zoom (phone's own camera zoom, Android Chrome) ───────
+const zoom={ok:false,min:1,max:1,step:0.1,cur:1};
+function setupZoom(){
+  const tr=stream&&stream.getVideoTracks()[0]; zoom.ok=false;
+  try{
+    const c=tr.getCapabilities?tr.getCapabilities():{};
+    if(c.zoom&&c.zoom.max>c.zoom.min){ zoom.ok=true; zoom.min=c.zoom.min; zoom.max=Math.min(c.zoom.max,10); zoom.step=c.zoom.step||0.1; zoom.cur=(tr.getSettings().zoom)||zoom.min; }
+    if(c.focusMode&&c.focusMode.includes('continuous')) tr.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(()=>{});
+  }catch(e){}
+}
+let zoomT=null, zoomWarned=false;
+function setZoom(z){
+  if(fileMode) return;
+  if(!zoom.ok){ if(!zoomWarned){zoomWarned=true;toast('이 폰/브라우저는 앱 안 줌을 지원하지 않아요 — 🎞 로 카메라 앱 영상을 불러오세요',4000);} return; }
+  if(active||counting){ toast('세트 중에는 줌을 바꿀 수 없어요'); return; }
+  z=Math.max(zoom.min,Math.min(zoom.max,Math.round(z/zoom.step)*zoom.step));
+  if(Math.abs(z-zoom.cur)<zoom.step/2) return;
+  zoom.cur=z;
+  const tr=stream&&stream.getVideoTracks()[0];
+  if(tr) tr.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
+  const chip=$('#zoom-chip'); chip.textContent=z.toFixed(1)+'×'; chip.classList.add('visible');
+  clearTimeout(zoomT); zoomT=setTimeout(()=>chip.classList.remove('visible'),1200);
+  if(tracker.ok){ tracker.ok=false; trail=[]; updateTargetUI(); }   // scale changed → plate must be re-selected
+}
+
+// ── Analyse a video recorded with the phone's camera app ─
+let fileMode=false, fileURL=null;
+$('#btn-import').onclick=()=>{ if(fileMode){ startCamera().catch(()=>toast('카메라를 열 수 없어요')); } else $('#file-in').click(); };
+$('#file-in').onchange=async e=>{
+  const f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f) return;
+  if(active) stopSet(false);
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  if(fileURL) URL.revokeObjectURL(fileURL);
+  fileURL=URL.createObjectURL(f); fileMode=true;
+  video.srcObject=null; video.loop=false; video.muted=true; video.src=fileURL;
+  video.style.transform=overlay.style.transform='none';
+  try{
+    await new Promise((res,rej)=>{video.onloadeddata=res;video.onerror=()=>rej(new Error('이 영상 형식을 열 수 없어요'));});
+    video.pause(); video.currentTime=0;
+    await new Promise(r=>{video.onseeked=r;setTimeout(r,800);});
+  }catch(err){ toast(err.message,4000); exitFileMode(true); return; }
+  overlay.width=video.videoWidth; overlay.height=video.videoHeight;
+  tracker.ok=false; trail=[]; resetSet(); updateTargetUI();
+  $('#btn-import').textContent='📷'; $('#btn-cam-flip').style.display='none';
+  toast('영상 불러옴 — 플레이트를 탭한 뒤 ▶ Start',4000);
+};
+video.addEventListener('ended',()=>{ if(fileMode&&active) stopSet(false); });
+// recorded video: if this phone can't analyse every frame in real time, slow playback down instead of skipping frames
+let lastPF=null, pfWin=[];
+function adaptRate(pf){
+  if(lastPF!=null){ pfWin.push(Math.max(0,pf-lastPF-1)); if(pfWin.length>8) pfWin.shift(); }
+  lastPF=pf;
+  if(pfWin.length<8) return;
+  const drop=pfWin.reduce((a,b)=>a+b,0)/(pfWin.length+pfWin.reduce((a,b)=>a+b,0));
+  if(drop>0.25&&video.playbackRate>0.2){ video.playbackRate=Math.max(0.2,video.playbackRate*(drop>0.6?0.5:0.75)); pfWin=[]; }
+  else if(drop===0&&video.playbackRate<1){ video.playbackRate=Math.min(1,video.playbackRate*1.15); pfWin=[]; }
+}
+function exitFileMode(restart){
+  fileMode=false; video.pause(); video.removeAttribute('src'); video.load();
+  if(fileURL){URL.revokeObjectURL(fileURL);fileURL=null;}
+  $('#btn-import').textContent='🎞'; $('#btn-cam-flip').style.display='';
+  tracker.ok=false; updateTargetUI();
+  if(restart) startCamera().catch(()=>{});
 }
 
 // ── Main loop ────────────────────────────────────────────
@@ -864,6 +938,7 @@ function loop(now,meta){
   if(!camOn||video.readyState<2) return;
   if(!grabGray()) return;
   const t=frameTime(meta);
+  if(fileMode&&active&&meta&&meta.presentedFrames!=null) adaptRate(meta.presentedFrames);
   fpsN++; if(performance.now()-fpsT>1000){fps=fpsN;fpsN=0;fpsT=performance.now();}
   let res=null;
   runPose();
@@ -895,6 +970,7 @@ function loop(now,meta){
   }
   drawOverlay(res);
   if(cfg.debug) drawDebug(res);
+  if(isRecording) recFrame();          // one recorded frame per camera frame → smooth video
   lastT=t;
 }
 function scheduleFrame(){
@@ -1014,6 +1090,7 @@ function onFail(f,state){
 function startCountdown(){
   if(counting) return;
   if(!tracker.ok){toast('먼저 바벨 플레이트를 탭하세요');return;}
+  if(fileMode){ beginSet(); return; }                       // recorded video: no countdown needed
   counting=true; $('#btn-start').disabled=true;
   let n=3; $('#countdown-num').textContent=n; $('#countdown-overlay').classList.add('visible');
   const iv=setInterval(()=>{
@@ -1025,12 +1102,13 @@ function startCountdown(){
 }
 function beginSet(){
   seg=new RepSeg(curLift,onRep,onFail);
-  t0=lastT; y0=tracker.cy-stab.dy; x0=tracker.cx-stab.dx; frames.length=0; joints=[]; lastJ=-1; shakeWarned=0;
+  t0=fileMode?video.currentTime:lastT; y0=tracker.cy-stab.dy; x0=tracker.cx-stab.dx; frames.length=0; joints=[]; lastJ=-1; shakeWarned=0;
   active=true; lastRepWall=lastMoveWall=performance.now();
   $('#btn-start').textContent='⏸ Stop'; $('#btn-start').classList.add('stopping');
   updateTargetUI(); renderReps();
   if(cfg.rec) startRec();
   requestWake();
+  if(fileMode){ lastPF=null; pfWin=[]; video.playbackRate=1; video.play().catch(()=>{}); }
 }
 function checkAutoStop(v){
   const ring=$('#autostop-ring');
@@ -1223,25 +1301,34 @@ function showAI(entry,o){
 // ── Recording (canvas composite: video + overlay + stats) ─
 let mediaRecorder=null,chunks=[],isRecording=false,recRaf=null;
 const recCanvas=document.createElement('canvas'),recCtx=recCanvas.getContext('2d');
-function recMime(){for(const m of['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}return '';}
+// Prefer MP4: H.265 (HEVC) when the phone's encoder offers it, else H.264; WebM only as a last resort
+const REC_TYPES=['video/mp4;codecs=hvc1.1.6.L120.B0','video/mp4;codecs=hev1.1.6.L120.B0','video/mp4;codecs=hvc1','video/mp4;codecs=hevc',
+  'video/mp4;codecs=avc1.640028','video/mp4;codecs=avc1.4D0028','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+function recMime(){for(const m of REC_TYPES){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}return '';}
+let recTrack=null;
 function startRec(){
-  if(isRecording||!stream) return;
-  chunks=[]; const W=video.videoWidth||1280,H=video.videoHeight||720;
+  if(isRecording||!video.videoWidth) return;
+  chunks=[]; const W=video.videoWidth,H=video.videoHeight;
   recCanvas.width=W; recCanvas.height=H;
-  try{recCtx.drawImage(video,0,0,W,H);}catch(e){}
-  let rs; try{rs=recCanvas.captureStream(30);if(!rs.getVideoTracks().length)throw 0;}catch(e){rs=stream;}
-  const mime=recMime();
-  try{mediaRecorder=new MediaRecorder(rs,mime?{mimeType:mime}:{});}catch(e){try{mediaRecorder=new MediaRecorder(rs);}catch(e2){toast('녹화 미지원');return;}}
+  recFrame(true);
+  let rs=null; recTrack=null;
+  try{ rs=recCanvas.captureStream(0); recTrack=rs.getVideoTracks()[0]; if(!recTrack||!recTrack.requestFrame) throw 0; }   // frames pushed manually, one per camera frame
+  catch(e){ try{ rs=recCanvas.captureStream(30); recTrack=null; }catch(e2){ rs=stream; } }
+  if(!rs){toast('녹화 미지원');return;}
+  const mime=recMime(), bps=Math.round(W*H*30*(mime.includes('hvc')||mime.includes('hev')?0.09:0.14));   // ~6–9 Mbps at 1080p
+  try{mediaRecorder=new MediaRecorder(rs,mime?{mimeType:mime,videoBitsPerSecond:bps}:{videoBitsPerSecond:bps});}
+  catch(e){try{mediaRecorder=new MediaRecorder(rs);}catch(e2){toast('녹화 미지원');return;}}
   mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
   mediaRecorder.onstop=saveRec;
-  mediaRecorder.start(500); isRecording=true;
-  const loopRec=()=>{
-    if(!isRecording){recRaf=null;return;} recRaf=requestAnimationFrame(loopRec);
-    try{ if(facingMode==='user'){recCtx.save();recCtx.scale(-1,1);recCtx.drawImage(video,-W,0,W,H);recCtx.drawImage(overlay,-W,0,W,H);recCtx.restore();}
-         else {recCtx.drawImage(video,0,0,W,H);recCtx.drawImage(overlay,0,0,W,H);} }catch(e){}
-    drawRecText(W,H);
-  };
-  loopRec();
+  mediaRecorder.start(1000); isRecording=true;
+}
+// draw video + overlay + stats into the recording canvas and hand exactly this frame to the recorder
+function recFrame(first){
+  const W=recCanvas.width,H=recCanvas.height;
+  try{ if(facingMode==='user'&&!fileMode){recCtx.save();recCtx.scale(-1,1);recCtx.drawImage(video,-W,0,W,H);recCtx.drawImage(overlay,-W,0,W,H);recCtx.restore();}
+       else {recCtx.drawImage(video,0,0,W,H);recCtx.drawImage(overlay,0,0,W,H);} }catch(e){}
+  drawRecText(W,H);
+  if(!first&&recTrack&&recTrack.requestFrame) recTrack.requestFrame();
 }
 function drawRecText(W,H){
   const reps=seg?seg.reps:[], fs=Math.max(16,Math.round(Math.min(W,H)*0.045)), pad=Math.round(fs*0.6);
@@ -1263,7 +1350,7 @@ function stopRec(){
 }
 function saveRec(){
   if(!chunks.length){toast('No video data');return;}
-  const mime=mediaRecorder.mimeType||'video/webm', ext=mime.includes('mp4')?'mp4':'webm';
+  const mime=(mediaRecorder.mimeType||recMime()||'video/webm'), ext=mime.includes('mp4')?'mp4':'webm';
   const blob=new Blob(chunks,{type:mime}), url=URL.createObjectURL(blob);
   const ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
   const a=document.createElement('a'); a.href=url; a.download=`tatelift_${LIFTS[curLift].label}_${ts}.${ext}`;
@@ -1272,8 +1359,27 @@ function saveRec(){
 }
 
 // ── Events ───────────────────────────────────────────────
+// touch: one finger tap = select plate, two fingers = zoom
+const ptrs=new Map(); let pinch=null, tapStart=null;
 $('#camera-wrap').addEventListener('pointerdown',ev=>{
   if(ev.target.closest('button')) return;
+  ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  if(ptrs.size===1) tapStart={x:ev.clientX,y:ev.clientY,t:performance.now(),id:ev.pointerId};
+  if(ptrs.size===2){ tapStart=null; const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:zoom.cur}; }
+});
+$('#camera-wrap').addEventListener('pointermove',ev=>{
+  if(!ptrs.has(ev.pointerId)) return; ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  if(pinch&&ptrs.size===2){ const [a,b]=[...ptrs.values()]; setZoom(pinch.z*Math.hypot(a.x-b.x,a.y-b.y)/Math.max(20,pinch.d)); }
+});
+const ptrEnd=ev=>{
+  ptrs.delete(ev.pointerId); if(ptrs.size<2) pinch=null;
+  const st=tapStart; if(!st||st.id!==ev.pointerId) return; tapStart=null;
+  if(Math.hypot(ev.clientX-st.x,ev.clientY-st.y)>12||performance.now()-st.t>700) return;
+  selectPlate(ev);
+};
+$('#camera-wrap').addEventListener('pointerup',ptrEnd);
+$('#camera-wrap').addEventListener('pointercancel',ev=>{ptrs.delete(ev.pointerId);pinch=null;tapStart=null;});
+function selectPlate(ev){
   if(active||counting) { if(!(tracker.ok&&tracker.lost>15)) return; } // allow re-tap only when lost mid-set
   const p=tapToVideo(ev); if(!p||!grabGray()) return;
   const k=WW/video.videoWidth;
@@ -1288,7 +1394,8 @@ $('#camera-wrap').addEventListener('pointerdown',ev=>{
   }
   updateTargetUI();
   toast(`플레이트 선택됨 — 원 크기가 안 맞으면 − / + 로 조절`);
-});
+  drawOverlay(null);
+}
 $('#r-minus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*0.95);}};
 $('#r-plus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*1.05);}};
 $('#btn-start').onclick=()=>{ if(active) stopSet(false); else { $('#result-bg').classList.remove('open'); startCountdown(); } };
