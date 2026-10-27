@@ -49,7 +49,7 @@ button{font-family:inherit;}
 #track-chip .tv{font-family:var(--fm);font-size:12px;font-weight:700;color:var(--teal);}
 #track-chip .tl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-top:1px;}
 
-#tap-hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);background:rgba(13,13,13,0.8);border:1px dashed var(--acc);color:var(--text);font-size:13px;font-weight:600;padding:12px 18px;border-radius:10px;text-align:center;pointer-events:none;z-index:4;line-height:1.6;}
+#tap-hint{position:absolute;left:50%;top:52px;transform:translateX(-50%);width:max-content;max-width:86%;background:rgba(13,13,13,0.7);border:1px dashed var(--acc);color:var(--text);font-size:13px;font-weight:600;padding:12px 18px;border-radius:10px;text-align:center;pointer-events:none;z-index:4;line-height:1.6;}
 #tap-hint small{display:block;color:var(--text2);font-weight:400;font-size:11px;}
 
 #radius-ctl{position:absolute;right:12px;bottom:12px;display:none;gap:6px;z-index:5;}
@@ -67,6 +67,18 @@ button{font-family:inherit;}
 #cam-controls{position:absolute;bottom:12px;left:14px;display:flex;gap:10px;z-index:5;transition:opacity .2s;}
 #zoom-chip{position:absolute;bottom:66px;left:50%;transform:translateX(-50%);z-index:5;display:none;padding:5px 12px;border-radius:999px;background:rgba(13,13,13,.75);border:1px solid var(--border);font:600 13px var(--fb);color:var(--yellow);pointer-events:none;}
 #zoom-chip.visible{display:block;}
+#trim-bar{position:absolute;left:12px;right:12px;bottom:64px;z-index:6;display:none;background:rgba(13,13,13,.85);border:1px solid var(--border);border-radius:12px;padding:8px 12px 4px;}
+#trim-bar.visible{display:block;}
+.trim-times{display:flex;justify-content:space-between;font:600 12px var(--fb);color:var(--text2);margin-bottom:2px;}
+#trim-mid{color:var(--yellow);}
+.trim-track{position:relative;height:30px;}
+.trim-track::before{content:'';position:absolute;left:0;right:0;top:13px;height:4px;background:var(--s3);border-radius:2px;}
+#trim-fill{position:absolute;top:13px;height:4px;background:var(--acc);border-radius:2px;}
+.trim-track input{position:absolute;left:0;top:0;width:100%;height:30px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none;}
+.trim-track input::-webkit-slider-runnable-track{background:none;}
+.trim-track input::-webkit-slider-thumb{pointer-events:auto;-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:#fff;border:3px solid var(--acc);}
+.trim-track input::-moz-range-thumb{pointer-events:auto;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--acc);}
+#trim-bar.busy input{display:none;}
 #camera-wrap{touch-action:none;}
 .cam-fab{width:44px;height:44px;border-radius:50%;background:rgba(13,13,13,0.75);border:2px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .cam-fab.off{background:var(--s3);color:var(--text3);}
@@ -95,6 +107,8 @@ button{font-family:inherit;}
 #rpe-val{font-family:var(--fm);font-weight:700;font-size:16px;color:var(--acc);}
 #rpe-track{height:5px;background:var(--s3);border-radius:2px;overflow:hidden;}
 #rpe-fill{height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .6s,background .4s;}
+#btn-pause{background:var(--s2);color:var(--text3);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:8px 10px;cursor:pointer;flex-shrink:0;font-family:var(--fb);}
+#btn-pause.on{color:var(--yellow);border-color:var(--yellow);background:rgba(255,193,7,.08);}
 #btn-reset{background:var(--s2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;padding:8px 12px;cursor:pointer;flex-shrink:0;}
 
 #metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;}
@@ -193,13 +207,17 @@ table.t td:first-child{color:var(--text3);}
       <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="3"/>
       <circle id="autostop-arc" cx="18" cy="18" r="15" fill="none" stroke="#e05555" stroke-width="3" stroke-dasharray="94.2" stroke-dashoffset="94.2" stroke-linecap="round" transform="rotate(-90 18 18)"/>
     </svg>
-    <div id="radius-ctl"><button id="r-minus" aria-label="smaller">−</button><button id="r-plus" aria-label="bigger">+</button></div>
+    <div id="radius-ctl"><button id="r-minus" aria-label="smaller">−</button><button id="r-plus" aria-label="bigger">+</button><button id="r-lock" aria-label="lock size">🔓</button></div>
     <div id="cam-controls">
       <button class="cam-fab" id="btn-cam-off" aria-label="Camera on/off">📷</button>
       <button class="cam-fab" id="btn-cam-flip" aria-label="Flip camera">⟳</button>
       <button class="cam-fab" id="btn-import" aria-label="Analyse a video">🎞</button>
     </div>
     <div id="zoom-chip"></div>
+    <div id="trim-bar">
+      <div class="trim-times"><span id="trim-s">0.0s</span><span id="trim-mid">구간 선택</span><span id="trim-e">0.0s</span></div>
+      <div class="trim-track"><div id="trim-fill"></div><input type="range" id="trim-a" min="0" max="1000" value="0" aria-label="start"/><input type="range" id="trim-b" min="0" max="1000" value="1000" aria-label="end"/></div>
+    </div>
     <input type="file" id="file-in" accept="video/*" hidden/>
   </div>
 
@@ -214,6 +232,7 @@ table.t td:first-child{color:var(--text3);}
         <div id="rpe-mini-header"><span id="rpe-label">RPE Estimate</span><span><span id="rpe-desc">—</span><span id="rpe-val">—</span></span></div>
         <div id="rpe-track"><div id="rpe-fill"></div></div>
       </div>
+      <button id="btn-pause" title="Paused / tempo reps">⏸ Pause</button>
       <button id="btn-reset">Reset</button>
     </div>
     <div id="metrics">
@@ -245,6 +264,7 @@ table.t td:first-child{color:var(--text3);}
     <div class="ai-box" id="res-ai-box"><span class="muted">—</span></div>
     <div class="sec">실제 체감 RPE는? (트래커가 학습해요)</div>
     <div class="chips" id="res-chips"></div>
+    <button class="btn-wide" id="res-export" style="display:none;margin-bottom:8px">🎬 오버레이 영상 저장 (MP4)</button>
     <button class="btn-wide" id="res-close">닫기</button>
   </div>
 </div>
@@ -299,7 +319,8 @@ const store={
   get(k,d){try{const v=localStorage.getItem('tl2_'+k);return v===null?d:JSON.parse(v);}catch(e){return d;}},
   set(k,v){try{localStorage.setItem('tl2_'+k,JSON.stringify(v));}catch(e){}}
 };
-const cfg=Object.assign({ai:false,worker:'',plate:45,rec:true,stopSec:7,wake:true,debug:false,pose:true},store.get('cfg',{}));
+const cfg=Object.assign({ai:false,worker:'',plate:45,rec:true,stopSec:7,wake:true,debug:false,pose:true,pause:{}},store.get('cfg',{}));
+if(typeof cfg.pause!=='object'||!cfg.pause) cfg.pause={};
 let calib=store.get('calib',{}); // {BP:[{v,rpe,t}],...}
 
 // ── RPE model ────────────────────────────────────────────
@@ -326,9 +347,9 @@ function normVelocity(lift,mcv,rom){
   const f=Math.sqrt(LIFTS[lift].refROM/Math.max(0.05,rom));
   return mcv*Math.max(0.7,Math.min(1.6,f));
 }
-function rpeFromVelocity(lift,v){
+function rpeFromVelocity(lift,v,key){
   let r=rpeDefault(lift,v);
-  const fit=personalFit(lift);
+  const fit=personalFit(key||lift);
   if(fit){const w=fit.n/(fit.n+4); r=(1-w)*r+w*(fit.a+fit.b*v);}
   return Math.max(4,Math.min(10,Math.round(r*10)/10));
 }
@@ -340,8 +361,8 @@ class PlateTracker{
   constructor(){this.ok=false;this.A=new Float64Array(72);}
   init(G,W,H,cx,cy){
     this.W=W;this.H=H;
-    this.r=estimateRadius(G,W,H,cx,cy);
-    this.cx=cx;this.cy=cy;this.vx=0;this.vy=0;
+    const f=fitPlate(G,W,H,cx,cy);
+    this.r=f.r; this.cx=f.x; this.cy=f.y; this.vx=0;this.vy=0;
     this._makeTemplate(G); this.T0=this.T.slice(); this._makeColors();
     this.score=1;this.lost=0;this.ok=true;this._q=[];this.gy=cy;
   }
@@ -457,9 +478,9 @@ class PlateTracker{
 // Tracks textured background patches away from the plate; their median shift = camera motion,
 // which is subtracted from the plate height so a moving/handheld phone doesn't create fake reps.
 class BgStab{
-  constructor(){this.P=[];this.dx=0;this.dy=0;this.good=true;this.n=0;this.jerk=0;}
+  constructor(){this.P=[];this.dx=0;this.dy=0;this.good=true;this.drop=false;this.shaking=false;this.n=0;this.hist=[];this.range=0;}
   init(G,W,H,cx,cy,r){
-    this.W=W;this.H=H;this.P=[];this.dx=0;this.dy=0;this.good=true;this.jerk=0;
+    this.W=W;this.H=H;this.P=[];this.dx=0;this.dy=0;this.good=true;this.drop=false;this.shaking=false;this.hist=[];this.range=0;
     const hs=10,ps=hs*2,cand=[];
     const band=Math.max(1.6*r,W*0.12);
     for(let y=hs+4;y<H-hs-4;y+=Math.round(H/14))for(let x=hs+4;x<W-hs-4;x+=Math.round(W/10)){
@@ -478,7 +499,7 @@ class BgStab{
       if(this.P.some(p=>Math.hypot(p.x0-c.x,p.y0-c.y)<W*0.12)) continue;
       const T=new Float32Array(ps*ps);
       for(let j=0;j<ps;j++)for(let i=0;i<ps;i++) T[j*ps+i]=G[(c.y-hs+j)*W+c.x-hs+i];
-      this.P.push({x0:c.x,y0:c.y,x:c.x,y:c.y,T,hs,ok:true});
+      this.P.push({x0:c.x,y0:c.y,x:c.x,y:c.y,T,hs,ok:true,err:0,bad:false});
     }
     this.n=this.P.length;
   }
@@ -498,17 +519,32 @@ class BgStab{
       for(let dy=-R;dy<=R;dy+=2)for(let dx=-R;dx<=R;dx+=2){const v=this._ncc(G,p,px+dx,py+dy,2);if(v>best){best=v;bx=px+dx;by=py+dy;}}
       let fb=best,fx=bx,fy=by;
       for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const v=this._ncc(G,p,bx+dx,by+dy,1);if(v>fb){fb=v;fx=bx+dx;fy=by+dy;}}
-      p.ok=fb>0.6; p.x=fx;p.y=fy;
-      if(p.ok) res.push({dx:fx-p.x0,dy:fy-p.y0});
+      p.ok=fb>0.6&&!p.bad; p.x=fx;p.y=fy;
+      if(p.ok) res.push({dx:fx-p.x0,dy:fy-p.y0,p});
     }
-    if(res.length<Math.max(3,Math.ceil(this.n*0.3))){this.good=false;return;}   // can't see the background → can't trust motion
+    const now=performance.now();
+    if(res.length<3){
+      // background hidden (lifter or people in front, lighting): keep the last camera position. Only distrust the
+      // frame if the camera was clearly moving just before — that's real shake blurring everything.
+      this.good=false; this.drop=this.shaking; this._hist(now); return;
+    }
     const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s[s.length>>1];};
     let mx=med(res.map(r=>r.dx)),my=med(res.map(r=>r.dy));
     const tol=Math.max(3,this.W*0.025);                                   // handheld phones also rotate a little
     const inl=res.filter(r=>Math.abs(r.dx-mx)<tol&&Math.abs(r.dy-my)<tol); // reject patches on moving people
     if(inl.length>=3){ mx=inl.reduce((a,r)=>a+r.dx,0)/inl.length; my=inl.reduce((a,r)=>a+r.dy,0)/inl.length; }
-    this.jerk=0.7*this.jerk+0.3*Math.hypot(mx-this.dx,my-this.dy);
-    this.dx=mx;this.dy=my;this.good=true;
+    // a point that keeps moving differently from the rest is on a person/object, not the background → drop it
+    for(const r of res){ r.p.err=0.92*r.p.err+0.08*Math.hypot(r.dx-mx,r.dy-my); if(r.p.err>1.6&&this.P.filter(q=>!q.bad).length>4) r.p.bad=true; }
+    // dead band: sub-pixel match noise on a steady phone must not leak into the bar height
+    if(Math.abs(mx-this.dx)>=0.5) this.dx=mx;
+    if(Math.abs(my-this.dy)>=0.5) this.dy=my;
+    this.good=true; this.drop=false; this._hist(now);
+  }
+  // shaking = the camera position wandered more than ~2% of the frame within the last second
+  _hist(now){
+    const h=this.hist; h.push([now,this.dx,this.dy]); while(h.length&&now-h[0][0]>1000) h.shift();
+    let a=Infinity,b=-Infinity,c=Infinity,d=-Infinity; for(const q of h){a=Math.min(a,q[1]);b=Math.max(b,q[1]);c=Math.min(c,q[2]);d=Math.max(d,q[2]);}
+    this.range=Math.max(b-a,d-c); this.shaking=this.range>Math.max(6,this.W*0.02);
   }
 }
 const stab=new BgStab();
@@ -593,6 +629,45 @@ function drawPose(k){
   }
 }
 
+// Refine the tap into the plate's real centre + radius. A plate is a set of concentric rings (rim, lip, hub,
+// lettering): every edge votes along its gradient for possible centres, the votes pile up at the plate centre,
+// and the radius is the outermost ring around that centre with solid edge support. The tap is rarely the centre.
+function fitPlate(G,W,H,tx,ty){
+  const S=Math.round(Math.min(W,H)*0.35), x0=Math.max(1,Math.round(tx-S)), x1=Math.min(W-2,Math.round(tx+S)),
+        y0=Math.max(1,Math.round(ty-S)), y1=Math.min(H-2,Math.round(ty+S));
+  const E=[], mags=[];
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    const i=y*W+x;
+    const gx=(G[i-W+1]+2*G[i+1]+G[i+W+1])-(G[i-W-1]+2*G[i-1]+G[i+W-1]);
+    const gy=(G[i+W-1]+2*G[i+W]+G[i+W+1])-(G[i-W-1]+2*G[i-W]+G[i-W+1]);
+    const m=Math.hypot(gx,gy); if(m>40){E.push([x,y,gx/m,gy/m,m]);mags.push(m);}
+  }
+  const fallback={x:tx,y:ty,r:estimateRadius(G,W,H,tx,ty)};
+  if(E.length<60) return fallback;
+  mags.sort((a,b)=>a-b); const thr=mags[Math.floor(mags.length*0.7)];         // strongest 30% of edges
+  const Rmin=Math.max(8,Math.round(Math.min(W,H)*0.025)), Rmax=S;
+  // 1) centre: votes from all radii, centres limited to near the tap
+  const C=Math.round(Math.min(W,H)*0.25), cw=2*C+1, acc=new Float32Array(cw*cw);
+  for(const [x,y,ux,uy,m] of E){ if(m<thr) continue;
+    for(let R=Rmin;R<=Rmax;R++) for(const sg of [1,-1]){
+      const cx=Math.round(x+sg*ux*R-tx)+C, cy=Math.round(y+sg*uy*R-ty)+C;
+      if(cx>=0&&cy>=0&&cx<cw&&cy<cw) acc[cy*cw+cx]+=1/R;                 // 1/R: a big ring is not favoured just for being long
+    }
+  }
+  let bi=-1,bv=0; const sg2=2*Math.pow(Math.min(W,H)*0.07,2);                 // people tap near the middle of the plate
+  for(let cy=1;cy<cw-1;cy++)for(let cx=1;cx<cw-1;cx++){
+    const k=cy*cw+cx, v=(acc[k]+0.5*(acc[k-1]+acc[k+1]+acc[k-cw]+acc[k+cw]))*Math.exp(-((cx-C)*(cx-C)+(cy-C)*(cy-C))/sg2);
+    if(v>bv){bv=v;bi=k;}
+  }
+  if(bi<0) return fallback;
+  const ccx=bi%cw-C+tx, ccy=Math.floor(bi/cw)-C+ty;
+  if(Math.hypot(ccx-tx,ccy-ty)>Math.min(W,H)*0.15) return fallback;
+  // radius: median of the ring estimate around the found centre (single estimates are noisy: hands, other plates)
+  const rs=[];
+  for(const [ox,oy] of [[0,0],[2,0],[-2,0],[0,2],[0,-2],[2,2],[-2,-2],[2,-2],[-2,2]]) rs.push(estimateRadius(G,W,H,ccx+ox,ccy+oy));
+  rs.sort((a,b)=>a-b);
+  return {x:ccx,y:ccy,r:rs[rs.length>>1]};
+}
 // Estimate plate radius from tap point: find the most consistent circular edge across rays
 function estimateRadius(G,W,H,cx,cy){
   const maxR=Math.floor(Math.min(W,H)*0.33), N=36, bins=new Float32Array(maxR+4);
@@ -624,7 +699,8 @@ function estimateRadius(G,W,H,cx,cy){
 // A rep = bar travels up by ≥ minROM from the lowest point since the previous rep.
 // Small reversals near lockout (tracking jitter) extend the same rep instead of ending it.
 class RepSeg{
-  constructor(lift,onRep,onFail){
+  constructor(lift,onRep,onFail,opts={}){
+    this.pause=!!opts.pause; this.ckey=lift+(this.pause?'_P':'');   // paused/tempo reps calibrate separately
     this.lift=lift; this.minROM=LIFTS[lift].minROM; this.eps=0.03; this.onRep=onRep; this.onFail=onFail||(()=>{});
     this.fails=[]; this.pending=null; this.failed=false;
     this.T=[];this.Y=[];this.X=[];this.ok=[];
@@ -716,7 +792,7 @@ class RepSeg{
     if(Y[h]-Y[i]>=this.eps) return;
     const lo=this._lowestSince(this._boundary(),h);
     let k=h; while(k>lo&&Y[k-1]>=Y[h]-0.01) k--;               // when it got (within 1 cm) to where it is stuck
-    if(T[i]-T[k]<2.0) return;
+    if(T[i]-T[k]<(this.pause?3.5:2.0)) return;
     const a=lo<h?this._attempt(lo,h):null;
     if(a){ this.pending={...a,lo,hi:h,kind:'stall'}; this._fail(this.pending,false); }
   }
@@ -764,17 +840,31 @@ class RepSeg{
     const mcv=(Y[ie]-Y[is])/tUp;
     let peakV=0,ip=is;
     for(let k=is;k<=ie;k++){const v=this.vel(k);if(v>peakV){peakV=v;ip=k;}}
+    // mid-rep pause (tempo / paused reps, e.g. a 1 s hold below the knee): bar held still part-way up
+    const hold=new Uint8Array(ie-is+1); let holdT=0,holdPct=null,hs=-1;
+    const vH=this.pause?0.06:0.04, minHold=this.pause?0.25:0.4;
+    for(let k=is+1;k<=ie;k++){
+      const p=(Y[k]-yL)/rom, still=Math.abs(this.vel(k))<vH&&p>0.15&&p<0.94;   // near the bottom = slow start, not a pause
+      if(still&&hs<0) hs=k;
+      if((!still||k===ie)&&hs>=0){
+        const e=still?k:k-1, d=T[e]-T[hs];
+        if(d>=minHold&&Math.abs(Y[e]-Y[hs])<0.025){ holdT+=d; if(holdPct==null) holdPct=Math.round((Y[hs]-yL)/rom*100); for(let m=hs;m<=e;m++) hold[m-is]=1; }
+        hs=-1;
+      }
+    }
+    const usePause=this.pause&&holdT>0;
     // grind: (a) velocity dips after an early push, or (b) a long slow stretch in 10-90% ROM (e.g. slow off the chest)
     let minV=Infinity,stickPct=null,slowT=0,dipMin=Infinity;
     for(let k=is+1;k<=ie;k++){
       const p=(Y[k]-yL)/rom; if(p<0.1||p>0.9) continue;
+      if(usePause&&hold[k-is]) continue;                       // an intentional pause is not a grind
       const v=this.vel(k);
       if(v<minV){minV=v;stickPct=Math.round(p*100);}
       if(k>ip&&v<dipMin) dipMin=v;
       if(v<0.5*peakV) slowT+=T[k]-T[k-1];
     }
     const earlyPeak=(Y[ip]-yL)/rom<0.75;
-    const grind=peakV>0&&((earlyPeak&&isFinite(dipMin)&&dipMin<0.55*peakV)||slowT>=0.35);
+    const grind=peakV>0&&((!usePause&&earlyPeak&&isFinite(dipMin)&&dipMin<0.55*peakV)||slowT>=0.35);
     // eccentric: from the top before this descent to arrival at the bottom
     let tDown=null,tPause=null;
     const from=existing?(this.reps.length>1?this.reps[this.reps.length-2]._hi:0):this._boundary();
@@ -786,7 +876,9 @@ class RepSeg{
     }
     if(tUp<0.25||tUp>10||mcv>1.6||peakV>2.5) return; // implausible for a loaded barbell → tracking glitch
     const rep=existing||{n:this.reps.length+1};
-    const vAdj=normVelocity(this.lift,mcv,rom);
+    // paused rep: judge effort on the moving part only (the pause itself isn't fatigue)
+    const mcvMove=usePause?(Y[ie]-Y[is])/Math.max(0.05,tUp-holdT):mcv;
+    const vAdj=normVelocity(this.lift,mcvMove,rom);
     Object.assign(rep,{
       _lo:lo,_hi:hi,
       tStart:+T[is].toFixed(2), tEnd:+T[ie].toFixed(2), tBottom:+T[lo].toFixed(2),
@@ -794,7 +886,8 @@ class RepSeg{
       tUp:+tUp.toFixed(2), tDown:tDown==null?null:+tDown.toFixed(2), tPause:tPause==null?null:+tPause.toFixed(2),
       total:+((tDown||0)+(tPause||0)+tUp).toFixed(2),
       grind, stickPct:grind?stickPct:null, slowT:+slowT.toFixed(2),
-      rpe:rpeFromVelocity(this.lift,vAdj),
+      holdT:+holdT.toFixed(2), holdPct, mcvMove:+mcvMove.toFixed(3), paused:usePause,
+      rpe:rpeFromVelocity(this.lift,vAdj,this.ckey),
     });
     if(!existing) this.reps.push(rep);
     this.onRep(rep,!existing);
@@ -904,10 +997,76 @@ $('#file-in').onchange=async e=>{
   }catch(err){ toast(err.message,4000); exitFileMode(true); return; }
   overlay.width=video.videoWidth; overlay.height=video.videoHeight;
   tracker.ok=false; trail=[]; resetSet(); updateTargetUI();
-  $('#btn-import').textContent='📷'; $('#btn-cam-flip').style.display='none';
-  toast('영상 불러옴 — 플레이트를 탭한 뒤 ▶ Start',4000);
+  $('#btn-import').textContent='🎥'; $('#btn-cam-flip').style.display='none'; $('#btn-cam-off').style.display='none';
+  setupTrim();
+  toast('영상 불러옴 — 구간을 고르고, 시작 화면에서 플레이트를 탭한 뒤 ▶ Start',4500);
 };
-video.addEventListener('ended',()=>{ if(fileMode&&active) stopSet(false); });
+video.addEventListener('ended',()=>{ if(exporting) finishExport(); else if(fileMode&&active) stopSet(false); });
+
+// ── trim: choose the part of the video to analyse ──
+const trim={a:0,b:0};
+function setupTrim(){
+  const d=video.duration||0; trim.a=0; trim.b=d;
+  $('#trim-a').value=0; $('#trim-b').value=1000; trimUI(); $('#trim-bar').classList.add('visible');
+}
+function trimUI(){
+  const d=video.duration||1;
+  $('#trim-s').textContent=trim.a.toFixed(1)+'s'; $('#trim-e').textContent=trim.b.toFixed(1)+'s';
+  $('#trim-mid').textContent=`${(trim.b-trim.a).toFixed(1)}s 분석`;
+  const f=$('#trim-fill'); f.style.left=(trim.a/d*100)+'%'; f.style.width=((trim.b-trim.a)/d*100)+'%';
+}
+function seekTo(t){ try{ if(video.fastSeek&&Math.abs(video.currentTime-t)>1) video.fastSeek(t); else video.currentTime=t; }catch(e){ video.currentTime=t; } }
+$('#trim-a').oninput=e=>{
+  if(active||exporting) return;
+  const d=video.duration||0; trim.a=Math.min(+e.target.value/1000*d,trim.b-0.5); e.target.value=trim.a/d*1000;
+  trimUI(); seekTo(trim.a);
+  if(tracker.ok){ tracker.ok=false; trail=[]; updateTargetUI(); }      // the plate must be picked on the start frame
+};
+$('#trim-a').onchange=()=>{ video.currentTime=trim.a; video.addEventListener('seeked',()=>{grabGray();drawOverlay(null);},{once:true}); toast('시작 화면에서 플레이트를 탭하세요'); };
+$('#trim-b').oninput=e=>{
+  if(active||exporting) return;
+  const d=video.duration||0; trim.b=Math.max(+e.target.value/1000*d,trim.a+0.5); e.target.value=trim.b/d*1000;
+  trimUI(); seekTo(trim.b);                                             // preview the end frame
+};
+$('#trim-b').onchange=()=>{ video.currentTime=trim.a; };               // back to the start frame (where the plate was picked)
+function showProgress(txt){ if(txt) $('#trim-mid').textContent=txt; else trimUI(); }
+
+// ── export: replay the analysed part at normal speed and record it with the overlay ──
+let exporting=false, fileLog=[], expSeg=null;
+$('#res-export').onclick=async()=>{
+  if(!fileLog.length||exporting) return;
+  $('#result-bg').classList.remove('open');
+  exporting=true; expSeg=curSetData?curSetData.seg:seg;
+  $('#trim-bar').classList.add('busy'); showProgress('영상 저장 준비…');
+  video.pause(); video.playbackRate=1; video.currentTime=trim.a;
+  await new Promise(r=>{video.addEventListener('seeked',r,{once:true});setTimeout(r,1500);});
+  startRec();
+  if(!isRecording){ exporting=false; $('#trim-bar').classList.remove('busy'); showProgress(''); toast('이 브라우저는 녹화를 지원하지 않아요'); return; }
+  video.play().catch(()=>{});
+};
+function logAt(t){ let lo=0,hi=fileLog.length-1; while(lo<hi){const m=(lo+hi)>>1; if(fileLog[m].t<t) lo=m+1; else hi=m;} return lo; }
+function exportFrame(t){
+  if(t>=trim.b-0.001){ finishExport(); return; }
+  const W=overlay.width,H=overlay.height,k=W/WW; octx.clearRect(0,0,W,H);
+  const i=logAt(t), e=fileLog[Math.min(i,fileLog.length-1)];
+  if(e){
+    octx.lineWidth=Math.max(2,W/250); octx.strokeStyle='rgba(0,229,200,0.75)'; octx.beginPath();
+    let first=true; for(let j=Math.max(0,i-200);j<=i&&j<fileLog.length;j++){ const q=fileLog[j]; if(q.lost||e.t-q.t>3) continue; first?octx.moveTo(q.x*k,q.y*k):octx.lineTo(q.x*k,q.y*k); first=false; }
+    octx.stroke();
+    const col=e.lost?'#e05555':e.ph==='up'?'#00e5c8':e.ph==='down'?'#ffc107':e.ph==='bottom'?'#e06c00':'#ffffff';
+    octx.lineWidth=Math.max(3,W/180); octx.strokeStyle=col; if(e.src==='pose') octx.setLineDash([8,6]);
+    octx.beginPath(); octx.arc(e.x*k,e.y*k,tracker.r*k,0,Math.PI*2); octx.stroke(); octx.setLineDash([]);
+  }
+  expT=t-t0; recFrame();
+  showProgress(`영상 저장 중 ${Math.round(Math.max(0,Math.min(1,(t-trim.a)/Math.max(0.1,trim.b-trim.a)))*100)}%`);
+}
+let expT=null;
+function finishExport(){
+  if(!exporting) return;
+  exporting=false; expT=null; video.pause(); stopRec();
+  $('#trim-bar').classList.remove('busy'); showProgress(''); toast('영상 저장 완료');
+  video.currentTime=trim.a;
+}
 // recorded video: if this phone can't analyse every frame in real time, slow playback down instead of skipping frames
 let lastPF=null, pfWin=[];
 function adaptRate(pf){
@@ -921,7 +1080,7 @@ function adaptRate(pf){
 function exitFileMode(restart){
   fileMode=false; video.pause(); video.removeAttribute('src'); video.load();
   if(fileURL){URL.revokeObjectURL(fileURL);fileURL=null;}
-  $('#btn-import').textContent='🎞'; $('#btn-cam-flip').style.display='';
+  $('#btn-import').textContent='🎞'; $('#btn-cam-flip').style.display=''; $('#btn-cam-off').style.display=''; $('#trim-bar').classList.remove('visible','busy'); exporting=false;
   tracker.ok=false; updateTargetUI();
   if(restart) startCamera().catch(()=>{});
 }
@@ -929,6 +1088,7 @@ function exitFileMode(restart){
 // ── Main loop ────────────────────────────────────────────
 const metersPerPx=()=>(cfg.plate/100)/(2*tracker.r);
 function frameTime(meta){
+  if(fileMode) return meta&&meta.mediaTime!==undefined?meta.mediaTime:video.currentTime;   // the video's own clock, whatever the playback speed
   if(meta&&meta.captureTime) return meta.captureTime/1000;
   if(meta&&meta.mediaTime!==undefined) return meta.mediaTime;
   return performance.now()/1000;
@@ -936,8 +1096,10 @@ function frameTime(meta){
 function loop(now,meta){
   scheduleFrame();
   if(!camOn||video.readyState<2) return;
+  if(exporting){ exportFrame(frameTime(meta)); return; }
   if(!grabGray()) return;
   const t=frameTime(meta);
+  if(fileMode&&active&&t>=trim.b-0.001){ video.pause(); stopSet(false); return; }
   if(fileMode&&active&&meta&&meta.presentedFrames!=null) adaptRate(meta.presentedFrames);
   fpsN++; if(performance.now()-fpsT>1000){fps=fpsN;fpsN=0;fpsT=performance.now();}
   let res=null;
@@ -951,7 +1113,7 @@ function loop(now,meta){
     if(res&&!res.lost) fusLearn(anc,res);
     else if(res&&pred){ res={x:pred.x,y:pred.y,score:res.score,lost:false}; lastSrc='pose'; }   // plate hidden → follow the body
     else lastSrc='lost';
-    if(res&&!stab.good){ res={...res,lost:true,shake:true}; lastSrc='shake'; }   // camera moving too much → don't trust this frame
+    if(res&&stab.drop){ res={...res,lost:true,shake:true}; lastSrc='shake'; }   // camera moving and background lost → don't trust this frame
     if(res&&!res.lost){trail.push({x:res.x,y:res.y,t});}
     while(trail.length&&t-trail[0].t>3) trail.shift();
   }
@@ -964,9 +1126,13 @@ function loop(now,meta){
     const v=seg.vel(Math.max(0,i-2));
     if(Math.abs(v)>0.08) lastMoveWall=performance.now();
     checkAutoStop(v);
-    if((stab.jerk>1.5||!stab.good)&&performance.now()-shakeWarned>4000){shakeWarned=performance.now();toast('카메라가 흔들려요 — 폰을 고정해 주세요');}
+    if(stab.shaking&&performance.now()-shakeWarned>5000){shakeWarned=performance.now();toast('카메라가 흔들려요 — 폰을 고정해 주세요');}
     captureFrame(t-t0);
     recordJoints(t-t0,pz);
+    if(fileMode){
+      fileLog.push({t,x:res.x,y:res.y,lost:!!res.lost,src:lastSrc,ph:seg.phase(seg.T.length-1)});
+      showProgress(`분석 중 ${Math.round(Math.max(0,Math.min(1,(t-trim.a)/Math.max(0.1,trim.b-trim.a)))*100)}%${video.playbackRate<0.99?` · ${video.playbackRate.toFixed(2)}× (모든 프레임 분석)`:''}`);
+    }
   }
   drawOverlay(res);
   if(cfg.debug) drawDebug(res);
@@ -1017,7 +1183,7 @@ function drawDebug(res){
     'v     '+(i>2?seg.vel(i-2).toFixed(2)+'m/s':'—'),
     'dir   '+(seg?seg.dir:'—')+'  ext '+(seg?seg.ext.length:0),
     'pose  '+(POSE.lm?`${POSE.delegate} ${POSE.ms.toFixed(0)}ms ${poseNow()?'✓':'—'} src ${lastSrc}`:(POSE.err?'ERR':POSE.loading?'loading':'off')),
-    'cam   '+(stab.n>=3?`${stab.dx.toFixed(1)},${stab.dy.toFixed(1)}px ${stab.good?'ok':'SHAKE'} (${stab.P.filter(p=>p.ok).length}/${stab.n})`:'no bg'),
+    'cam   '+(stab.n>=3?`${stab.dx.toFixed(1)},${stab.dy.toFixed(1)}px ±${stab.range.toFixed(1)} ${stab.shaking?'SHAKE':stab.good?'ok':'bg hidden'} (${stab.P.filter(p=>p.ok).length}/${stab.n})`:'no bg'),
   ].join('\n');
   if(WW&&stab.n){const k=overlay.width/WW;octx.lineWidth=1.5;stab.P.forEach(p=>{octx.strokeStyle=p.ok?'rgba(255,193,7,.8)':'rgba(224,85,85,.8)';octx.strokeRect((p.x-p.hs)*k,(p.y-p.hs)*k,p.hs*2*k,p.hs*2*k);});}
 }
@@ -1046,7 +1212,7 @@ function renderReps(){
   });
   [...reps].reverse().forEach(r=>{
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${r.n}${r.grind?' ⚠':''}</td><td>${r.mcv.toFixed(2)}</td><td>${r.tUp.toFixed(2)}</td><td>${r.total.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
+    tr.innerHTML=`<td>${r.n}${r.paused?' ⏸':''}${r.grind?' ⚠':''}</td><td>${(r.paused?r.mcvMove:r.mcv).toFixed(2)}</td><td>${r.tUp.toFixed(2)}</td><td>${r.total.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
     tb.appendChild(tr);
   });
   if(!reps.length){['#m-mcv','#m-loss','#m-avg'].forEach(s=>$(s).textContent='—');$('#rpe-val').textContent='—';$('#rpe-desc').textContent='—';$('#rpe-fill').style.width='0%';return;}
@@ -1075,9 +1241,12 @@ function renderSets(){
 function onRep(rep,isNew){
   lastRepWall=performance.now();
   renderReps();
-  if(isNew){ toast(`Rep ${rep.n} ✓  ${rep.mcv.toFixed(2)} m/s — RPE ${rep.rpe.toFixed(1)}`); if(navigator.vibrate) navigator.vibrate(40); }
+  if(isNew){
+    toast(`Rep ${rep.n} ✓  ${(rep.paused?rep.mcvMove:rep.mcv).toFixed(2)} m/s${rep.paused?' (⏸ 제외)':''} — RPE ${rep.rpe.toFixed(1)}`); if(navigator.vibrate) navigator.vibrate(40);
+    if(!seg.pause&&rep.holdT>=0.5&&!pauseHinted){ pauseHinted=true; setTimeout(()=>toast('중간에 멈춤이 감지됐어요 — 포즈/템포 렙이면 ⏸ Pause를 켜세요',4000),2600); }
+  }
 }
-let failStopT=null;
+let failStopT=null, pauseHinted=false;
 function onFail(f,state){
   renderReps();
   if(state==='cancel'){ toast('렙 완료 — 실패 아님'); return; }
@@ -1101,17 +1270,19 @@ function startCountdown(){
   },1000);
 }
 function beginSet(){
-  seg=new RepSeg(curLift,onRep,onFail);
+  seg=new RepSeg(curLift,onRep,onFail,{pause:!!cfg.pause[curLift]});
+  if(G&&tracker.ok) stab.init(G,WW,WH,tracker.cx,tracker.cy,tracker.r);   // fresh background points for this set
   t0=fileMode?video.currentTime:lastT; y0=tracker.cy-stab.dy; x0=tracker.cx-stab.dx; frames.length=0; joints=[]; lastJ=-1; shakeWarned=0;
   active=true; lastRepWall=lastMoveWall=performance.now();
   $('#btn-start').textContent='⏸ Stop'; $('#btn-start').classList.add('stopping');
   updateTargetUI(); renderReps();
-  if(cfg.rec) startRec();
+  if(cfg.rec&&!fileMode) startRec();      // recorded video: analyse first, save the overlay video afterwards at normal speed
   requestWake();
-  if(fileMode){ lastPF=null; pfWin=[]; video.playbackRate=1; video.play().catch(()=>{}); }
+  if(fileMode){ lastPF=null; pfWin=[]; fileLog=[]; video.playbackRate=1; $('#trim-bar').classList.add('busy'); video.play().catch(()=>{}); }
 }
 function checkAutoStop(v){
   const ring=$('#autostop-ring');
+  if(fileMode){ ring.classList.remove('visible'); return; }   // recorded video: runs to the end of the chosen part
   if(!seg||!seg.reps.length){ring.classList.remove('visible');return;}
   const idle=(performance.now()-Math.max(lastRepWall,lastMoveWall))/1000;
   ring.classList.add('visible');
@@ -1128,15 +1299,17 @@ function stopSet(auto=false){
   if(auto) alertStop();
   releaseWake(); clearTimeout(failStopT);
   if(seg) seg.finish();
+  if(fileMode){ video.pause(); $('#trim-bar').classList.remove('busy'); showProgress(''); }
   const reps=seg?seg.reps:[], fails=seg?seg.fails.filter(f=>f.final):[];
   if(!reps.length&&!fails.length){toast('렙이 감지되지 않았어요');return;}
   setNum++;
   const hardest=reps.length?reps.reduce((a,b)=>b.vAdj<a.vAdj?b:a):null;
-  const entry={n:setNum,ex:LIFTS[curLift].label,lift:curLift,wt:weightKg?`${weightKg}${weightUnit}`:'',reps:reps.length,fail:fails.length,
+  const entry={n:setNum,ex:LIFTS[curLift].label+(seg&&seg.pause?' ⏸':''),lift:curLift,ckey:seg?seg.ckey:curLift,pause:!!(seg&&seg.pause),wt:weightKg?`${weightKg}${weightUnit}`:'',reps:reps.length,fail:fails.length,
     rpe:fails.length?10:Math.max(...reps.map(r=>r.rpe)),slowMcv:hardest?hardest.vAdj:null,ai:null,you:null,time:Date.now()};
   setHistory.push(entry); store.set('sets',setHistory.slice(-100)); renderSets();
   curSetData={entry,reps:reps.map(stripRep),fails:fails.map(f=>({...f})),seg};
   openResult(curSetData);
+  $('#res-export').style.display=fileMode&&fileLog.length>5?'block':'none';
   if(cfg.ai&&cfg.worker) runAI(curSetData);
 }
 const stripRep=r=>{const o={};for(const k in r) if(k[0]!=='_') o[k]=r[k];return o;};
@@ -1171,7 +1344,7 @@ function openResult(d){
   reps.forEach(r=>{
     const tr=document.createElement('tr');
     tr.dataset.n=r.n;
-    tr.innerHTML=`<td>${r.n}${r.grind?' ⚠':''}</td><td>${r.mcv.toFixed(2)}</td><td>${r.tDown!=null?r.tDown.toFixed(1):'—'}</td><td>${r.tPause!=null?r.tPause.toFixed(1):'—'}</td><td>${r.tUp.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
+    tr.innerHTML=`<td>${r.n}${r.paused?' ⏸':''}${r.grind?' ⚠':''}</td><td>${(r.paused?r.mcvMove:r.mcv).toFixed(2)}</td><td>${r.tDown!=null?r.tDown.toFixed(1):'—'}</td><td>${r.tPause!=null?r.tPause.toFixed(1):'—'}</td><td>${r.tUp.toFixed(2)}</td><td class="${rpeCls(r.rpe)}">${r.rpe.toFixed(1)}</td>`;
     tb.appendChild(tr);
   });
   d.fails.forEach(f=>{
@@ -1187,11 +1360,11 @@ function openResult(d){
       chips.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel')); b.classList.add('sel');
       entry.you=r; store.set('sets',setHistory.slice(-100)); renderSets();
       if(entry.slowMcv==null){ toast('저장 — 실패 세트는 보정에 쓰지 않아요'); return; }
-      const arr=calib[entry.lift]||(calib[entry.lift]=[]);
+      const ck=entry.ckey||entry.lift, arr=calib[ck]||(calib[ck]=[]);
       const prev=arr.findIndex(p=>p.set===entry.time); const pt={v:entry.slowMcv,rpe:r,set:entry.time};
       if(prev>=0) arr[prev]=pt; else arr.push(pt);
-      calib[entry.lift]=arr.slice(-60); store.set('calib',calib); updateCalibInfo();
-      toast(`저장 — ${LIFTS[entry.lift].label} 보정 ${calib[entry.lift].length}개`);
+      calib[ck]=arr.slice(-60); store.set('calib',calib); updateCalibInfo();
+      toast(`저장 — ${LIFTS[entry.lift].label}${entry.pause?' ⏸':''} 보정 ${calib[ck].length}개`);
     };
     chips.appendChild(b);
   }
@@ -1199,7 +1372,7 @@ function openResult(d){
 }
 $('#res-close').onclick=()=>$('#result-bg').classList.remove('open');
 function updateCalibInfo(){
-  const parts=Object.keys(LIFTS).map(k=>{const n=(calib[k]||[]).length;return n?`${LIFTS[k].label} ${n}`:null;}).filter(Boolean);
+  const parts=Object.keys(calib).map(k=>{const n=(calib[k]||[]).length,b=k.replace('_P','');return n&&LIFTS[b]?`${LIFTS[b].label}${k.endsWith('_P')?' ⏸':''} ${n}`:null;}).filter(Boolean);
   $('#s-calib-info').textContent=parts.length?parts.join(' · ')+' (3개 이상부터 적용)':'아직 없음 — 세트 후 체감 RPE를 탭하세요';
 }
 
@@ -1249,7 +1422,8 @@ async function runAI(d){
     failedAttempts:fails.map(f=>({n:f.n,kind:f.kind,reachedPctOfROM:f.pct,tBottom:f.tBottom,tPeak:f.tPeak})),
     joints:joints.slice(-200), // [t, joint:[x cm, y cm]] same frame as the bar
     series, // [time s, bar height cm (up = positive)]
-    personalCalibration:(calib[entry.lift]||[]).slice(-12).map(p=>({slowestRepRomNormalisedVelocity:p.v,reportedRpe:p.rpe})),
+    pauseMode:!!entry.pause,
+    personalCalibration:(calib[entry.ckey||entry.lift]||[]).slice(-12).map(p=>({slowestRepRomNormalisedVelocity:p.v,reportedRpe:p.rpe})),
     note:'vAdj = mcv * sqrt(refROM/rom), refROM '+LIFTS[entry.lift].refROM+' m. Calibration uses vAdj.',
     frames:picks.map(p=>({t:+p.f.t.toFixed(2),label:p.label,data:p.f.data})),
   };
@@ -1308,7 +1482,8 @@ function recMime(){for(const m of REC_TYPES){try{if(MediaRecorder.isTypeSupporte
 let recTrack=null;
 function startRec(){
   if(isRecording||!video.videoWidth) return;
-  chunks=[]; const W=video.videoWidth,H=video.videoHeight;
+  chunks=[]; const sc=Math.min(1,1920/Math.max(video.videoWidth,video.videoHeight));   // 4K → 1080p
+  const W=Math.round(video.videoWidth*sc/2)*2,H=Math.round(video.videoHeight*sc/2)*2;
   recCanvas.width=W; recCanvas.height=H;
   recFrame(true);
   let rs=null; recTrack=null;
@@ -1331,7 +1506,8 @@ function recFrame(first){
   if(!first&&recTrack&&recTrack.requestFrame) recTrack.requestFrame();
 }
 function drawRecText(W,H){
-  const reps=seg?seg.reps:[], fs=Math.max(16,Math.round(Math.min(W,H)*0.045)), pad=Math.round(fs*0.6);
+  const S=exporting&&expSeg?expSeg:seg;
+  const reps=S?(expT!=null?S.reps.filter(r=>r.tEnd<=expT):S.reps):[], fs=Math.max(16,Math.round(Math.min(W,H)*0.045)), pad=Math.round(fs*0.6);
   recCtx.save(); recCtx.font=`700 ${fs}px Inter,system-ui,sans-serif`; recCtx.textBaseline='top';
   const avg=reps.length?(reps.reduce((s,r)=>s+r.rpe,0)/reps.length).toFixed(1):'—';
   const L=[`${LIFTS[curLift].label}${weightKg?' '+weightKg+weightUnit:''}`,`Avg RPE ${avg}`];
@@ -1339,7 +1515,7 @@ function drawRecText(W,H){
     recCtx.fillStyle='rgba(0,0,0,0.6)';recCtx.fillRect(bx,pad,w,lines.length*fs*1.25+pad);
     lines.forEach((l,i)=>{recCtx.fillStyle=cols[i];recCtx.fillText(l,bx+pad,pad+pad/2+i*fs*1.25);});};
   box(pad,L,['#e06c00','#00e5c8']);
-  const fl=seg&&seg.fails.length?seg.fails[seg.fails.length-1]:null;
+  const fls=S?(expT!=null?S.fails.filter(f=>f.tPeak<=expT):S.fails):[], fl=fls.length?fls[fls.length-1]:null;
   if(fl&&(!reps.length||fl.tPeak>reps[reps.length-1].tEnd)){box(-1,[fl.final?'✕ FAIL':'FAIL?',`${fl.pct}% ROM`],['#e05555','#a0a0a0']);}
   else if(reps.length){const r=reps[reps.length-1];box(-1,[`Rep ${r.n}`,`RPE ${r.rpe.toFixed(1)}`,`${r.mcv.toFixed(2)} m/s`],['#f0f0f0',r.rpe>=9?'#e05555':r.rpe>=8?'#ffc107':'#00e5c8','#a0a0a0']);}
   recCtx.restore();
@@ -1362,7 +1538,7 @@ function saveRec(){
 // touch: one finger tap = select plate, two fingers = zoom
 const ptrs=new Map(); let pinch=null, tapStart=null;
 $('#camera-wrap').addEventListener('pointerdown',ev=>{
-  if(ev.target.closest('button')) return;
+  if(ev.target.closest('button,#trim-bar')) return;
   ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
   if(ptrs.size===1) tapStart={x:ev.clientX,y:ev.clientY,t:performance.now(),id:ev.pointerId};
   if(ptrs.size===2){ tapStart=null; const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:zoom.cur}; }
@@ -1386,6 +1562,7 @@ function selectPlate(ev){
   const keepR=active&&tracker.ok?tracker.r:null;
   tracker.init(G,WW,WH,p.x*k,p.y*k); trail=[];
   if(keepR) tracker.setRadius(keepR);          // keep scale stable mid-set
+  else if(rLock&&rLock.key===lockKey()) tracker.setRadius(rLock.r*WW);   // locked size from earlier sets
   stab.init(G,WW,WH,tracker.cx,tracker.cy,tracker.r);
   FUS.reset();
   if(active&&seg&&seg.Y.length){                // continue height from last known value
@@ -1396,16 +1573,30 @@ function selectPlate(ev){
   toast(`플레이트 선택됨 — 원 크기가 안 맞으면 − / + 로 조절`);
   drawOverlay(null);
 }
-$('#r-minus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*0.95);}};
-$('#r-plus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*1.05);}};
+$('#r-minus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*0.97);if(rLock)saveLock();drawOverlay(null);}};
+$('#r-plus').onclick=()=>{if(tracker.ok){tracker.setRadius(tracker.r*1.03);if(rLock)saveLock();drawOverlay(null);}};
+// size lock: same camera spot → same plate size every set, so velocities (and RPE) stay comparable
+let rLock=store.get('rlock',null);
+const lockKey=()=>`${video.videoWidth}x${video.videoHeight}@${zoom.cur.toFixed(1)}`;
+function saveLock(){ rLock={r:tracker.r/WW,key:lockKey()}; store.set('rlock',rLock); updateLockUI(); }
+function updateLockUI(){ $('#r-lock').textContent=rLock?'🔒':'🔓'; }
+$('#r-lock').onclick=()=>{ if(rLock){rLock=null;store.set('rlock',null);toast('원 크기 고정 해제');} else if(tracker.ok){saveLock();toast('원 크기 고정 — 같은 자리에서 찍는 다음 세트도 이 크기를 써요',3500);} updateLockUI(); };
+updateLockUI();
 $('#btn-start').onclick=()=>{ if(active) stopSet(false); else { $('#result-bg').classList.remove('open'); startCountdown(); } };
 $('#btn-reset').onclick=()=>{resetSet();toast('Reset');};
+function updatePauseUI(){ $('#btn-pause').classList.toggle('on',!!cfg.pause[curLift]); }
+$('#btn-pause').onclick=()=>{
+  if(active){toast('세트 중에는 바꿀 수 없어요');return;}
+  cfg.pause[curLift]=!cfg.pause[curLift]; saveCfg(); updatePauseUI();
+  toast(cfg.pause[curLift]?`${LIFTS[curLift].label}: ⏸ Pause/템포 렙 — 중간 멈춤은 속도·RPE 계산에서 빼요`:`${LIFTS[curLift].label}: 일반 렙`,3500);
+};
+updatePauseUI();
 $('#btn-cam-flip').onclick=async()=>{facingMode=facingMode==='user'?'environment':'user';try{await startCamera();}catch(e){toast('카메라 전환 실패');}};
 $('#btn-cam-off').onclick=()=>{
   camOn=!camOn; $('#btn-cam-off').classList.toggle('off',!camOn); $('#cam-off-screen').classList.toggle('visible',!camOn);
   if(camOn) video.play(); else {video.pause(); if(active) stopSet(false);}
 };
-$('#exercise-select').onchange=e=>{curLift=e.target.value; if(!active) {seg=null;renderReps();} toast(LIFTS[curLift].label);};
+$('#exercise-select').onchange=e=>{curLift=e.target.value;updatePauseUI(); if(!active) {seg=null;renderReps();} toast(LIFTS[curLift].label);};
 $('#weight-in').oninput=e=>{const v=parseFloat(e.target.value);weightKg=(!isNaN(v)&&v>0)?v:null;};
 document.querySelectorAll('.unit-seg-btn').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.unit-seg-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');weightUnit=b.dataset.unit;$('#weight-in').placeholder=`Weight (${weightUnit})`;

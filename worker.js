@@ -23,6 +23,11 @@ DATA YOU RECEIVE
 - joints: body joints over time (cm, same frame as the bar: x horizontal from the bar's start, y up = +),
   from a phone pose model. They can be wrong (e.g. legs mistaken for arms on a bench); ignore them if they don't fit.
   When they look right, use them for form notes (e.g. hips rising before the shoulders in a squat/deadlift).
+- pauseMode: true when the lifter is doing PAUSED / TEMPO reps on purpose (e.g. a tempo deadlift with a ~1 s hold
+  below the knee, pause squats). Reps then carry holdT (s held still mid-ascent), holdPct (where, % ROM) and
+  mcvMove (mean velocity of the moving part only). Judge effort on mcvMove / the moving parts: the intentional
+  pause makes a rep look slower but is not a grind and does not by itself mean a higher RPE.
+  When pauseMode is false but a rep still shows holdT, consider whether it was an intentional pause or a real stall.
 - personalCalibration: past sets where the lifter reported their real RPE for the slowest rep's vAdj.
   Weight this heavily — it reflects this lifter's own velocity-RPE relationship.
 - frames: still images at labelled moments (the bottom and lockout of every detected rep, the hardest rep's
@@ -110,6 +115,7 @@ export default {
       joints: Array.isArray(body.joints) ? body.joints.slice(-200) : [],
       personalCalibration: Array.isArray(body.personalCalibration) ? body.personalCalibration.slice(0, 20) : [],
       series: Array.isArray(body.series) ? body.series : [],
+      pauseMode: !!body.pauseMode,
       note: body.note ? String(body.note).slice(0, 300) : '',
     };
     let text = JSON.stringify(data);
