@@ -1635,12 +1635,18 @@ async function makeEncoder(vw,vh,maxSide,bitsPerPx){
   if(!conf) return {err:'이 폰의 인코더가 영상 설정을 거부했어요'+(lastErr?' ('+lastErr+')':'')};
   const target=new Mp4Muxer.ArrayBufferTarget();
   const muxer=new Mp4Muxer.Muxer({target,video:{codec:'avc',width:W,height:H},fastStart:'in-memory',firstTimestampBehavior:'offset'});
-  const e={lastTs:-1,n:0,err:null,closed:false,W,H};
-  const encoder=new VideoEncoder({output:(c,m)=>{ try{ muxer.addVideoChunk(c,m); }catch(x){ e.err=x; } },error:x=>{ e.err=x; }});
+  const e={lastTs:-1,n:0,err:null,closed:false,W,H,gap:33333};
+  // Android's encoder hands back chunks without a duration; the muxer needs one, so supply it ourselves
+  const encoder=new VideoEncoder({output:(c,m)=>{ try{
+      const d=Number.isFinite(c.duration)&&c.duration>0?c.duration:e.gap;
+      const buf=new Uint8Array(c.byteLength); c.copyTo(buf);
+      muxer.addVideoChunkRaw(buf,c.type,Math.max(0,c.timestamp),d,m||undefined);
+    }catch(x){ e.err=x; } },error:x=>{ e.err=x; }});
   try{ encoder.configure(conf); }catch(x){ return {err:'인코더 설정 실패: '+(x.message||x)}; }
   e.encode=(canvas,ts)=>{
-    if(e.err||e.closed) return; ts=Math.round(ts); if(ts<=e.lastTs) return; e.lastTs=ts;
-    let vf; try{ vf=new VideoFrame(canvas,{timestamp:ts}); }catch(x){ e.err=x; return; }
+    if(e.err||e.closed) return; ts=Math.round(ts); if(ts<=e.lastTs) return;
+    if(e.lastTs>=0) e.gap=Math.max(1000,Math.min(200000,ts-e.lastTs)); e.lastTs=ts;
+    let vf; try{ vf=new VideoFrame(canvas,{timestamp:ts,duration:e.gap}); }catch(x){ e.err=x; return; }
     try{ encoder.encode(vf,{keyFrame:e.n%60===0}); }catch(x){ e.err=x; }
     vf.close(); e.n++;
     const q=encoder.encodeQueueSize;                   // let the encoder keep up instead of dropping frames
