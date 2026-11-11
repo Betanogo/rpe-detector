@@ -965,7 +965,11 @@ function tapToVideo(ev){
 const nextSeek=()=>new Promise(r=>{video.addEventListener('seeked',r,{once:true});setTimeout(r,1500);});
 
 // ── Views ────────────────────────────────────────────────
-function show(v){ for(const n of ['home','edit','result']) $('#view-'+n).classList.toggle('on',n===v); }
+function show(v){
+  for(const n of ['home','edit','result']) $('#view-'+n).classList.toggle('on',n===v);
+  // keep one history entry above home, so the phone's back button returns here instead of closing the app
+  if(v!=='home'){ const st=history.state&&history.state.v; if(!st||st==='home') history.pushState({v},''); else if(st!=='settings') history.replaceState({v},''); }
+}
 function setMode(m){
   mode=m;
   if(m==='home'||m==='result') return;
@@ -1004,9 +1008,21 @@ async function openVideo(f){
   buildThumbs(fileURL); loadPose();
 }
 function goHome(){
+  if(history.state&&history.state.v&&history.state.v!=='home'){ history.back(); return; }   // popstate below finishes it
+  doHome();
+}
+function doHome(){
   active=false; video.pause(); releaseWake(); mode='home';
   show('home'); renderHome();
 }
+// phone / browser back button
+addEventListener('popstate',()=>{
+  if($('#settings-bg').classList.contains('open')){ $('#settings-bg').classList.remove('open'); renderHome(); return; }
+  if(mode==='analyze'){ cancelAnalysis(); history.pushState({v:'edit'},''); toast('분석을 취소했어요'); return; }
+  if(mode==='export'||mode==='export-done'){ history.pushState({v:'edit'},''); toast('영상 저장 중이에요 — 끝나면 결과 화면으로 돌아가요'); return; }
+  if(mode==='replay'){ finishReplay(); return; }
+  if(mode!=='home') doHome();
+});
 $('#btn-edit-back').onclick=()=>{
   if(mode==='analyze'){ cancelAnalysis(); return; }
   if(mode==='export'){ return; }
@@ -1794,9 +1810,10 @@ function applyCfgToUI(){
   $('#debug-box').style.display=cfg.debug?'block':'none'; updateCalibInfo();
 }
 const saveCfg=()=>{store.set('cfg',cfg);$('#debug-box').style.display=cfg.debug?'block':'none';};
-$('#btn-settings').onclick=()=>{applyCfgToUI();$('#settings-bg').classList.add('open');};
-$('#settings-close').onclick=()=>{$('#settings-bg').classList.remove('open');renderHome();};
-$('#settings-bg').addEventListener('click',e=>{if(e.target.id==='settings-bg'){$('#settings-bg').classList.remove('open');renderHome();}});
+$('#btn-settings').onclick=()=>{applyCfgToUI();$('#settings-bg').classList.add('open');history.pushState({v:'settings'},'');};
+const closeSettings=()=>{ if(history.state&&history.state.v==='settings') history.back(); else { $('#settings-bg').classList.remove('open'); renderHome(); } };
+$('#settings-close').onclick=closeSettings;
+$('#settings-bg').addEventListener('click',e=>{if(e.target.id==='settings-bg') closeSettings();});
 $('#s-ai').onchange=e=>{cfg.ai=e.target.checked;saveCfg();};
 $('#s-worker').onchange=e=>{cfg.worker=e.target.value.trim();saveCfg();};
 $('#s-plate').onchange=e=>{cfg.plate=Math.max(20,Math.min(50,+e.target.value||45));saveCfg();};
@@ -1813,6 +1830,7 @@ $('#s-test').onclick=async()=>{
 function updateTargetUI(){}   // pose loader calls this; nothing to show on the dashboard
 
 // ── Boot ─────────────────────────────────────────────────
+if(!history.state||history.state.v!=='home') history.replaceState({v:'home'},'');
 applyCfgToUI(); renderLiftChips(); updateUnitUI(); updatePauseUI(); updateCompUI(); updateLockUI(); renderHome();
 scheduleFrame();
 </script>
