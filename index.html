@@ -147,6 +147,10 @@ button{font-family:inherit;color:inherit;}
 
 /* ── RESULT ── */
 #view-result .scroll{flex:1;overflow-y:auto;padding:0 16px calc(24px + var(--sb));}
+#clip-box{display:none;margin-bottom:12px;}
+#clip{display:block;width:100%;max-height:48dvh;background:#000;border-radius:14px;object-fit:contain;}
+#clip-msg{font-size:12px;color:var(--text2);text-align:center;padding:4px 0;}
+#clip-msg:empty{display:none;}
 .kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
 .kv div{background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:12px 6px;text-align:center;}
 .kv b{display:block;font-size:24px;font-weight:800;}
@@ -274,6 +278,7 @@ table.t td:first-child{color:var(--text2);}
     <div><div class="bar-title" id="res-title">결과</div><div class="bar-sub" id="res-sub"></div></div>
   </div>
   <div class="scroll">
+    <div id="clip-box"><video id="clip" muted loop playsinline preload="auto"></video><div id="clip-msg"></div></div>
     <div class="kv">
       <div><b id="res-reps">—</b><span>REPS</span></div>
       <div><b id="res-trk" style="color:var(--acc)">—</b><span>TRACKER RPE</span></div>
@@ -287,7 +292,7 @@ table.t td:first-child{color:var(--text2);}
     <div class="sec-h"><h3>실제 체감 RPE는?</h3><span>트래커가 학습해요</span></div>
     <div class="chips" id="res-chips"></div>
     <div class="res-actions">
-      <button class="btn-main" id="res-export">🎬 오버레이 영상 저장 (MP4 + GIF)</button>
+      <button class="btn-main" id="res-export">🎬 영상 저장 (MP4)</button>
       <button class="btn-ghost" id="res-replay">▶ 오버레이로 재생 (폰 화면 녹화용)</button>
       <button class="btn-ghost" id="res-redo">구간·플레이트 다시 고르기</button>
       <button class="btn-ghost" id="res-new">새 영상 올리기</button>
@@ -1012,7 +1017,7 @@ function goHome(){
   doHome();
 }
 function doHome(){
-  active=false; video.pause(); releaseWake(); mode='home';
+  active=false; video.pause(); releaseWake(); mode='home'; try{ $('#clip').pause(); }catch(e){}
   show('home'); renderHome();
 }
 // phone / browser back button
@@ -1201,11 +1206,13 @@ async function beginAnalysis(){
   stab.init(G,WW,WH,tracker.cx,tracker.cy,tracker.r); FUS.reset();
   t0=video.currentTime; y0=tracker.cy-stab.dy; x0=tracker.cx-stab.dx;
   frames.length=0; lastCap=-1; joints=[]; lastJ=-1; fileLog=[]; trail=[]; shakeWarned=0; pauseHinted=false;
+  await startClip();
   active=true; setMode('analyze'); renderLive(); progress(0);
   requestWake(); lastPF=null; pfWin=[]; video.playbackRate=1; video.play().catch(()=>{});
 }
 async function cancelAnalysis(){
   active=false; video.pause(); releaseWake(); seg=null;
+  if(clipEnc){ clipEnc.close(); clipEnc=null; }
   setMode('edit'); video.currentTime=trim.a; await nextSeek(); restoreTracker(); trail=[]; drawEditOverlay(); updateEditUI();
 }
 $('#btn-cancel').onclick=()=>cancelAnalysis();
@@ -1243,6 +1250,7 @@ function finishAnalysis(){
     file:fileName,comp:segComp,repsData:reps.map(stripRep),failsData:fails.map(f=>({...f}))};
   setHistory.push(entry); saveSets();
   curSetData={entry,reps:entry.repsData,fails:entry.failsData,seg,live:true};
+  const clipDone=saveClip(entry);
   openResult(curSetData);
   if(cfg.ai&&cfg.worker) runAI(curSetData);
 }
@@ -1326,6 +1334,7 @@ function loop(now,meta){
   progress((t-trim.a)/Math.max(0.1,trim.b-trim.a), video.playbackRate<0.99?`${video.playbackRate.toFixed(2)}× · 모든 프레임 분석`:'');
   updateHead(t);
   drawOverlay(res);
+  clipFrame(t);
   if(cfg.debug) drawDebug(res);
   lastT=t;
 }
@@ -1437,7 +1446,8 @@ function openResult(d){
     };
     chips.appendChild(b);
   }
-  $('#res-export').style.display=d.live&&fileLog.length>5?'block':'none';
+  $('#res-export').style.display=(entry.clip||clipBusy.has(entry.time)||clipMem.has(entry.time)||(d.live&&fileLog.length>5))?'block':'none';
+  showClip(entry);
   $('#res-replay').style.display=d.live&&fileLog.length>5?'block':'none';
   $('#res-redo').style.display=d.live&&fileURL?'block':'none';
 }
@@ -1464,6 +1474,7 @@ $('#res-delete').onclick=()=>{
   const e=curSetData&&curSetData.entry; if(!e) return;
   if(!confirm('이 세트 기록을 삭제할까요?')) return;
   setHistory=setHistory.filter(s=>s!==e&&s.time!==e.time); saveSets();
+  idb.del('clip:'+e.time).catch(()=>{});
   for(const k in calib){ calib[k]=calib[k].filter(p=>p.set!==e.time); } store.set('calib',calib);
   toast('삭제했어요'); goHome();
 };
@@ -1592,105 +1603,126 @@ function showAI(entry,o,replay){
 
 // ── Export: replay the analysed part at normal speed with the overlay → MP4 ──
 let mediaRecorder=null,chunks=[],isRecording=false,recTrack=null,expT=null,expData=null;
-const recCanvas=document.createElement('canvas'),recCtx=recCanvas.getContext('2d'); window.recCtx0=recCtx;
+const recCanvas=document.createElement('canvas'),recCtx=recCanvas.getContext('2d');
 // Prefer MP4: H.265 (HEVC) when the phone's encoder offers it, else H.264; WebM only as a last resort
 const REC_TYPES=['video/mp4;codecs=hvc1.1.6.L120.B0','video/mp4;codecs=hev1.1.6.L120.B0','video/mp4;codecs=hvc1','video/mp4;codecs=hevc',
   'video/mp4;codecs=avc1.640028','video/mp4;codecs=avc1.4D0028','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
 function recMime(){for(const m of REC_TYPES){try{if(MediaRecorder.isTypeSupported(m))return m;}catch(e){}}return '';}
-// Overlay video export. Encodes every analysed frame with WebCodecs at the source timestamps and writes a regular
-// MP4 (index at the front, like the phone camera's own files) so players can seek. MediaRecorder only as fallback.
+// Overlay video. Every analysed frame is encoded with WebCodecs at the source timestamps into a regular MP4
+// (index at the front, like the phone camera's own files) so it loops smoothly and the slider can seek.
 const MUX_URL=window.__MUX_URL||'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js';
 const loadScript=u=>new Promise((res,rej)=>{ if(window.Mp4Muxer) return res(); const sc=document.createElement('script'); sc.src=u; sc.onload=res; sc.onerror=()=>rej(new Error('script')); document.head.appendChild(sc); });
-let enc=null, expUseEnc=false;
-async function startEncode(W,H){
-  if(!('VideoEncoder' in window)) return false;
-  try{ await loadScript(MUX_URL); }catch(e){ return false; }
-  const bitrate=Math.round(W*H*30*0.14);
+async function makeEncoder(W,H,bitsPerPx){
+  if(!('VideoEncoder' in window)) return null;
+  try{ await loadScript(MUX_URL); }catch(e){ return null; }
+  const bitrate=Math.round(W*H*30*bitsPerPx);
   let conf=null;
   for(const codec of ['avc1.640028','avc1.4d0028','avc1.42e028','avc1.640033']){
     try{ const r=await VideoEncoder.isConfigSupported({codec,width:W,height:H,bitrate,framerate:30,avc:{format:'avc'}}); if(r.supported){ conf=r.config; break; } }catch(e){}
   }
-  if(!conf) return false;
+  if(!conf) return null;
   const target=new Mp4Muxer.ArrayBufferTarget();
   const muxer=new Mp4Muxer.Muxer({target,video:{codec:'avc',width:W,height:H},fastStart:'in-memory',firstTimestampBehavior:'offset'});
-  const e={target,muxer,lastTs:-1,n:0,err:null};
-  e.encoder=new VideoEncoder({output:(c,m)=>{ try{ muxer.addVideoChunk(c,m); }catch(x){ e.err=x; } },error:x=>{ e.err=x; }});
-  try{ e.encoder.configure(conf); }catch(x){ return false; }
-  enc=e; return true;
+  const e={lastTs:-1,n:0,err:null,closed:false};
+  const encoder=new VideoEncoder({output:(c,m)=>{ try{ muxer.addVideoChunk(c,m); }catch(x){ e.err=x; } },error:x=>{ e.err=x; }});
+  try{ encoder.configure(conf); }catch(x){ return null; }
+  e.encode=(canvas,ts)=>{
+    if(e.err||e.closed) return; ts=Math.round(ts); if(ts<=e.lastTs) return; e.lastTs=ts;
+    const vf=new VideoFrame(canvas,{timestamp:ts});
+    try{ encoder.encode(vf,{keyFrame:e.n%60===0}); }catch(x){ e.err=x; }
+    vf.close(); e.n++;
+    const q=encoder.encodeQueueSize;                   // let the encoder keep up instead of dropping frames
+    if(q>6&&video.playbackRate>0.25) video.playbackRate=Math.max(0.25,video.playbackRate*0.7);
+  };
+  e.finish=async()=>{
+    if(e.closed) return null; e.closed=true;
+    try{ await encoder.flush(); muxer.finalize(); encoder.close(); }catch(x){ e.err=e.err||x; }
+    return e.err||!e.n?null:new Blob([target.buffer],{type:'video/mp4'});
+  };
+  e.close=()=>{ if(e.closed) return; e.closed=true; try{ encoder.close(); }catch(x){} };
+  return e;
 }
-function encodeFrame(tSec){
-  const e=enc; if(!e||e.err) return;
-  const ts=Math.round((tSec-trim.a)*1e6); if(ts<=e.lastTs) return; e.lastTs=ts;
-  const vf=new VideoFrame(recCanvas,{timestamp:ts});
-  try{ e.encoder.encode(vf,{keyFrame:e.n%60===0}); }catch(x){ e.err=x; }
-  vf.close(); e.n++;
-  const q=e.encoder.encodeQueueSize;                  // let the encoder keep up instead of dropping frames
-  if(q>6&&video.playbackRate>0.25) video.playbackRate=Math.max(0.25,video.playbackRate*0.7);
-  else if(q<2&&video.playbackRate<1) video.playbackRate=Math.min(1,video.playbackRate*1.1);
-}
-async function finishEncode(){
-  const e=enc; enc=null; if(!e) return;
-  try{ await e.encoder.flush(); e.muxer.finalize(); e.encoder.close(); }catch(x){ e.err=e.err||x; }
-  if(e.err||!e.n){ toast('영상 저장 실패: '+((e.err&&e.err.message)||'프레임 없음'),4000); return; }
-  downloadBlob(new Blob([e.target.buffer],{type:'video/mp4'}),'mp4');
-}
-function downloadBlob(blob,ext){
+function downloadBlob(blob,ext,lift){
   const url=URL.createObjectURL(blob), ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
-  const lbl=expData?LIFTS[expData.entry.lift].label:'set';
-  const a=document.createElement('a'); a.href=url; a.download=`tatelift_${lbl}_${ts}.${ext}`;
+  const a=document.createElement('a'); a.href=url; a.download=`tatelift_${lift?LIFTS[lift].label:'set'}_${ts}.${ext}`;
   a.style.cssText='position:fixed;opacity:0;'; document.body.appendChild(a);
   requestAnimationFrame(()=>{a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url);},30000);});
 }
-// High-quality GIF next to the MP4: up to 720 px on the long side (portrait 406×720), 15 fps,
-// its own 256-colour palette per frame. Encoded in a worker so the MP4 export keeps its pace.
-const GIF_URL=window.__GIF_URL||'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
-const GIF_FPS=15, GIF_MAX=720;
-let gifJob=null;
-function startGif(){
+
+// ── Set clips: stored on the phone (IndexedDB), looped on the result page ──
+const idb={
+  p:null,
+  open(){ return this.p||(this.p=new Promise((res,rej)=>{ const r=indexedDB.open('tatelift',1); r.onupgradeneeded=()=>r.result.createObjectStore('clips'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); })); },
+  async run(mode,fn){ const db=await this.open(); return new Promise((res,rej)=>{ const t=db.transaction('clips',mode), st=t.objectStore('clips'), q=fn(st); t.oncomplete=()=>res(q&&q.result); t.onerror=()=>rej(t.error); }); },
+  put(k,v){ return this.run('readwrite',s=>s.put(v,k)); },
+  get(k){ return this.run('readonly',s=>s.get(k)); },
+  del(k){ return this.run('readwrite',s=>s.delete(k)); },
+  keys(){ return this.run('readonly',s=>s.getAllKeys()); },
+};
+const CLIP_KEEP=40;
+const clipCanvas=document.createElement('canvas'), clipCtx=clipCanvas.getContext('2d');
+let clipEnc=null, clipLive=null, clipURL=null;
+const clipBusy=new Set(), clipMem=new Map();   // in this session only (never saved with the set record)
+async function startClip(){
+  clipEnc=null;
+  const sc=Math.min(1,1920/Math.max(video.videoWidth,video.videoHeight));            // up to 1080p
+  clipCanvas.width=Math.round(video.videoWidth*sc/2)*2; clipCanvas.height=Math.round(video.videoHeight*sc/2)*2;
+  clipEnc=await makeEncoder(clipCanvas.width,clipCanvas.height,0.06);                 // ≈3.7 Mbps at 1080p
+  clipLive={entry:{ex:LIFTS[curLift].label+(cfg.pause[curLift]?' ⏸':''),wt:weightVal?`${weightVal}${weightUnit}`:'',comp:segComp},seg};
+}
+function clipFrame(t){
+  if(!clipEnc) return;
+  const W=clipCanvas.width,H=clipCanvas.height;
+  try{ clipCtx.drawImage(video,0,0,W,H); clipCtx.drawImage(overlay,0,0,W,H); }catch(e){ return; }
+  drawRecText(W,H,clipCtx,clipLive,null);
+  clipEnc.encode(clipCanvas,(t-trim.a)*1e6);
+}
+async function saveClip(entry){
+  const e=clipEnc; clipEnc=null; if(!e) return;
+  clipBusy.add(entry.time);
+  const blob=await e.finish();
+  clipBusy.delete(entry.time);
+  if(!blob){ if(curSetData&&curSetData.entry===entry) showClip(entry); return; }
   try{
-    const src=`import {GIFEncoder,quantize,applyPalette} from '${GIF_URL}';
-      const gif=GIFEncoder(); let prev=null;
-      const put=(f,delay)=>{ const pal=quantize(f.px,256,{format:'rgb565'}); gif.writeFrame(applyPalette(f.px,pal,'rgb565'),f.w,f.h,{palette:pal,delay}); };
-      onmessage=e=>{ const m=e.data;
-        if(m.type==='frame'){ const f={px:new Uint8ClampedArray(m.buf),w:m.w,h:m.h,t:m.t}; if(prev) put(prev,Math.max(20,Math.round((f.t-prev.t)*1000))); prev=f; postMessage({type:'ack'}); }
-        else if(m.type==='end'){ if(prev) put(prev,Math.round(1000/${GIF_FPS})); gif.finish(); const b=gif.bytes(); postMessage({type:'done',buf:b.buffer},[b.buffer]); } };
-      postMessage({type:'ready'});`;
-    const w=new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})),{type:'module'});
-    const sc=Math.min(1,GIF_MAX/Math.max(video.videoWidth,video.videoHeight));
-    const job={w,pending:0,lastT:-1,n:0,failed:false,cw:Math.round(video.videoWidth*sc/2)*2,ch:Math.round(video.videoHeight*sc/2)*2,done:null};
-    job.c=document.createElement('canvas'); job.c.width=job.cw; job.c.height=job.ch; job.ctx=job.c.getContext('2d',{willReadFrequently:true});
-    w.onmessage=e=>{ const m=e.data; if(m.type==='ack') job.pending--; else if(m.type==='done'&&job.done) job.done(m.buf); };
-    w.onerror=()=>{ job.failed=true; if(job.done) job.done(null); };
-    gifJob=job;
-  }catch(e){ gifJob=null; }
+    await idb.put('clip:'+entry.time,blob); entry.clip=true; saveSets();
+    try{ navigator.storage&&navigator.storage.persist&&navigator.storage.persist(); }catch(x){}
+    const ks=(await idb.keys()).filter(k=>String(k).startsWith('clip:')).sort((a,b)=>+a.slice(5)-+b.slice(5));
+    for(const k of ks.slice(0,Math.max(0,ks.length-CLIP_KEEP))){ await idb.del(k); const s=setHistory.find(x=>'clip:'+x.time===k); if(s) delete s.clip; }
+    saveSets();
+  }catch(x){ clipMem.set(entry.time,blob); }                                          // storage refused: keep it for this session
+  if(curSetData&&curSetData.entry===entry&&mode==='result') showClip(entry);
 }
-function gifFrame(t){
-  const j=gifJob; if(!j||j.failed) return;
-  if(j.lastT>=0&&t-j.lastT<1/GIF_FPS-0.004) return;
-  if(j.pending>4){ if(video.playbackRate>0.25) video.playbackRate=Math.max(0.25,video.playbackRate*0.8); return; }   // let the GIF encoder keep up
-  j.lastT=t; j.ctx.drawImage(recCanvas,0,0,j.cw,j.ch);
-  const px=j.ctx.getImageData(0,0,j.cw,j.ch).data;
-  j.w.postMessage({type:'frame',buf:px.buffer,w:j.cw,h:j.ch,t},[px.buffer]); j.pending++; j.n++;
+async function showClip(entry){
+  const box=$('#clip-box'), v=$('#clip'), msg=$('#clip-msg');
+  if(clipURL){ URL.revokeObjectURL(clipURL); clipURL=null; }
+  v.removeAttribute('src'); v.controls=false;
+  if(clipBusy.has(entry.time)){ box.style.display='block'; v.style.display='none'; msg.innerHTML='<span class="spinner"></span>클립 만드는 중…'; return; }
+  let blob=clipMem.get(entry.time)||null;
+  if(!blob&&entry.clip){ try{ blob=await idb.get('clip:'+entry.time); }catch(e){} }
+  if(!blob){ box.style.display='none'; return; }
+  if(!(curSetData&&curSetData.entry===entry)) return;
+  box.style.display='block'; v.style.display='block'; msg.textContent='';
+  clipURL=URL.createObjectURL(blob); v.src=clipURL; v.muted=true; v.loop=true; v.playsInline=true;
+  v.play().catch(()=>{});
 }
-function finishGif(){
-  const j=gifJob; gifJob=null; if(!j||j.failed||!j.n) return Promise.resolve(false);
-  return new Promise(res=>{
-    j.done=buf=>{ j.done=null; j.w.terminate(); if(!buf){res(false);return;} setTimeout(()=>downloadBlob(new Blob([buf],{type:'image/gif'}),'gif'),800); res(true); };
-    j.w.postMessage({type:'end'});
-    setTimeout(()=>{ if(j.done){ j.done=null; j.w.terminate(); res(false);} },120000);
-  });
-}
+// first tap shows the player controls (play/pause + slider); the clip keeps looping
+$('#clip').addEventListener('click',e=>{ const v=e.currentTarget; if(!v.controls){ v.controls=true; e.preventDefault(); } });
+async function clipBlobOf(entry){ if(clipMem.has(entry.time)) return clipMem.get(entry.time); if(!entry.clip) return null; try{ return await idb.get('clip:'+entry.time); }catch(e){ return null; } }
+
 $('#res-export').onclick=async()=>{
-  if(!fileLog.length||mode==='export'||!curSetData||!curSetData.live) return;
+  if(!curSetData) return;
+  const blob=await clipBlobOf(curSetData.entry);
+  if(blob){ downloadBlob(blob,'mp4',curSetData.entry.lift); toast('영상 저장 — 다운로드 폴더를 확인하세요',3000); return; }
+  if(clipBusy.has(curSetData.entry.time)){ toast('클립을 만드는 중이에요 — 잠시 후 다시 눌러주세요'); return; }
+  if(!fileLog.length||mode==='export'||!curSetData.live){ toast('이 세트는 저장된 영상이 없어요'); return; }
+  // no stored clip (encoder unavailable during analysis): replay the analysed part and record it
   expData=curSetData;
   show('edit'); setMode('export'); progress(0,'준비 중…');
   video.pause(); video.playbackRate=1; video.currentTime=trim.a; await nextSeek();
-  const sc=Math.min(1,1920/Math.max(video.videoWidth,video.videoHeight));             // 4K → 1080p
-  const W=Math.round(video.videoWidth*sc/2)*2,H=Math.round(video.videoHeight*sc/2)*2;
-  recCanvas.width=W; recCanvas.height=H;
-  expUseEnc=await startEncode(W,H);
-  startGif();
-  if(!expUseEnc){ startRec(); if(!isRecording){ toast('이 브라우저는 영상 저장을 지원하지 않아요 — ▶ 오버레이로 재생 후 화면 녹화를 쓰세요',4500); openResult(expData); return; } }
+  const sc=Math.min(1,1920/Math.max(video.videoWidth,video.videoHeight));
+  recCanvas.width=Math.round(video.videoWidth*sc/2)*2; recCanvas.height=Math.round(video.videoHeight*sc/2)*2;
+  startRec();
+  if(!isRecording){ toast('이 브라우저는 영상 저장을 지원하지 않아요 — ▶ 오버레이로 재생 후 화면 녹화를 쓰세요',4500); openResult(expData); return; }
   video.play().catch(()=>{});
 };
 function logAt(t){ let lo=0,hi=fileLog.length-1; while(lo<hi){const m=(lo+hi)>>1; if(fileLog[m].t<t) lo=m+1; else hi=m;} return lo; }
@@ -1709,18 +1741,12 @@ function exportFrame(t){
   if(t>=trim.b-0.001){ finishExport(); return; }
   drawLogged(t);
   expT=t-t0; recFrame();
-  if(expUseEnc) encodeFrame(t);
-  gifFrame(t);
-  progress((t-trim.a)/Math.max(0.1,trim.b-trim.a),(expUseEnc?'MP4':'녹화')+(gifJob?' + GIF':'')+` · ${video.playbackRate<0.99?video.playbackRate.toFixed(2)+'×':'1×'}`);
+  progress((t-trim.a)/Math.max(0.1,trim.b-trim.a),'녹화 중');
 }
 async function finishExport(){
   if(mode!=='export') return;
-  mode='export-done'; expT=null; video.pause();
-  if(expUseEnc){ progress(1,'MP4 만드는 중…'); await finishEncode(); }
-  else { stopRec(); }
-  progress(1,'GIF 만드는 중…');
-  const gifOk=await finishGif();
-  toast(gifOk?'MP4 + GIF 저장 완료 — 다운로드 폴더를 확인하세요':'영상 저장 완료 — 다운로드 폴더를 확인하세요',4000);
+  mode='export-done'; expT=null; video.pause(); stopRec();
+  toast('영상 저장 완료 — 다운로드 폴더를 확인하세요',3500);
   video.playbackRate=1; openResult(expData);
 }
 // full-screen playback with the overlay, for the phone's own screen recorder
@@ -1735,7 +1761,7 @@ $('#res-replay').onclick=async()=>{
 function replayFrame(t){
   if(t>=trim.b-0.001){ finishReplay(); return; }
   drawLogged(t); expT=t-t0;
-  drawRecText(overlay.width,overlay.height,octx);
+  drawRecText(overlay.width,overlay.height,octx,expData,expT);
 }
 function finishReplay(){
   if(mode!=='replay') return;
@@ -1762,13 +1788,12 @@ function startRec(){
 function recFrame(first){
   const W=recCanvas.width,H=recCanvas.height;
   try{ recCtx.drawImage(video,0,0,W,H); recCtx.drawImage(overlay,0,0,W,H); }catch(e){}
-  drawRecText(W,H);
-  if(!first&&!expUseEnc&&recTrack&&recTrack.requestFrame) recTrack.requestFrame();
+  drawRecText(W,H,recCtx,expData,expT);
+  if(!first&&recTrack&&recTrack.requestFrame) recTrack.requestFrame();
 }
-function drawRecText(W,H,ctx){
-  const recCtx=ctx||window.recCtx0;
-  const D=expData, S=D&&D.seg; if(!D) return;
-  const reps=S?(expT!=null?S.reps.filter(r=>r.tEnd<=expT):S.reps):[], fs=Math.max(16,Math.round(Math.min(W,H)*0.045)), pad=Math.round(fs*0.6);
+function drawRecText(W,H,recCtx,D,tRel){
+  const S=D&&D.seg; if(!D) return;
+  const reps=S?(tRel!=null?S.reps.filter(r=>r.tEnd<=tRel):S.reps):[], fs=Math.max(16,Math.round(Math.min(W,H)*0.045)), pad=Math.round(fs*0.6);
   recCtx.save(); recCtx.font=`700 ${fs}px Inter,system-ui,sans-serif`; recCtx.textBaseline='top';
   const avg=reps.length?(reps.reduce((s,r)=>s+r.rpe,0)/reps.length).toFixed(1):'—';
   const L=[`${D.entry.ex}${D.entry.wt?' '+D.entry.wt:''}`,`Avg RPE ${avg}`];
@@ -1776,7 +1801,7 @@ function drawRecText(W,H,ctx){
     recCtx.fillStyle='rgba(0,0,0,0.6)';recCtx.fillRect(bx,pad,w,lines.length*fs*1.25+pad);
     lines.forEach((l,i)=>{recCtx.fillStyle=cols[i];recCtx.fillText(l,bx+pad,pad+pad/2+i*fs*1.25);});};
   box(pad,L,['#ff7a1a','#1fe0c4']);
-  const fls=S?(expT!=null?S.fails.filter(f=>f.tPeak<=expT):S.fails):[], fl=fls.length?fls[fls.length-1]:null;
+  const fls=S?(tRel!=null?S.fails.filter(f=>f.tPeak<=tRel):S.fails):[], fl=fls.length?fls[fls.length-1]:null;
   if(fl&&(!reps.length||fl.tPeak>reps[reps.length-1].tEnd)){box(-1,[fl.final?'✕ FAIL':'FAIL?',`${fl.pct}% ROM`],['#ef5b5b','#a3a3a8']);}
   else if(reps.length){const r=reps[reps.length-1];
     const L2=[`Rep ${r.n}`,`RPE ${r.rpe.toFixed(1)}`,`${(r.paused?r.mcvMove:r.mcv).toFixed(2)} m/s`], C2=['#f2f2f2',r.rpe>=9?'#ef5b5b':r.rpe>=8?'#ffc531':'#1fe0c4','#a3a3a8'];
@@ -1791,7 +1816,7 @@ function stopRec(){
 function saveRec(){
   if(!chunks.length){toast('저장할 영상 데이터가 없어요');return;}
   const mime=(mediaRecorder.mimeType||recMime()||'video/webm');
-  downloadBlob(new Blob(chunks,{type:mime}),mime.includes('mp4')?'mp4':'webm');
+  downloadBlob(new Blob(chunks,{type:mime}),mime.includes('mp4')?'mp4':'webm',expData&&expData.entry.lift);
 }
 
 // ── Wake lock during analysis ────────────────────────────
