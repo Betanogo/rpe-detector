@@ -149,7 +149,7 @@ button{font-family:inherit;color:inherit;}
 #view-result .scroll{flex:1;overflow-y:auto;padding:0 16px calc(24px + var(--sb));}
 #clip-box{display:none;margin-bottom:12px;}
 #clip{display:block;width:100%;max-height:48dvh;background:#000;border-radius:14px;object-fit:contain;}
-#clip-msg{font-size:12px;color:var(--text2);text-align:center;padding:4px 0;}
+#clip-msg{font-size:12px;color:var(--text2);text-align:center;padding:12px 10px;background:var(--s1);border:1px dashed var(--border);border-radius:14px;line-height:1.6;}
 #clip-msg:empty{display:none;}
 .kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
 .kv div{background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:12px 6px;text-align:center;}
@@ -1612,23 +1612,35 @@ function recMime(){for(const m of REC_TYPES){try{if(MediaRecorder.isTypeSupporte
 // (index at the front, like the phone camera's own files) so it loops smoothly and the slider can seek.
 const MUX_URL=window.__MUX_URL||'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js';
 const loadScript=u=>new Promise((res,rej)=>{ if(window.Mp4Muxer) return res(); const sc=document.createElement('script'); sc.src=u; sc.onload=res; sc.onerror=()=>rej(new Error('script')); document.head.appendChild(sc); });
-async function makeEncoder(W,H,bitsPerPx){
-  if(!('VideoEncoder' in window)) return null;
-  try{ await loadScript(MUX_URL); }catch(e){ return null; }
-  const bitrate=Math.round(W*H*30*bitsPerPx);
-  let conf=null;
-  for(const codec of ['avc1.640028','avc1.4d0028','avc1.42e028','avc1.640033']){
-    try{ const r=await VideoEncoder.isConfigSupported({codec,width:W,height:H,bitrate,framerate:30,avc:{format:'avc'}}); if(r.supported){ conf=r.config; break; } }catch(e){}
+// Phone hardware encoders are picky: sizes must be multiples of 16 and some refuse 1080p portrait or High profile,
+// so try a few sizes / profiles until one is accepted. Returns {enc} or {err}.
+async function makeEncoder(vw,vh,maxSide,bitsPerPx){
+  if(!('VideoEncoder' in window)&&!('VideoEncoder' in self)) return {err:'이 브라우저는 영상 인코딩(WebCodecs)을 지원하지 않아요'};
+  try{ await loadScript(MUX_URL); }catch(e){ return {err:'영상 저장 모듈을 불러오지 못했어요 (인터넷 연결 확인)'}; }
+  const sizes=[];
+  for(const cap of [maxSide,1280,960,720]){
+    const sc=Math.min(1,cap/Math.max(vw,vh)), W=Math.max(16,Math.round(vw*sc/16)*16), H=Math.max(16,Math.round(vh*sc/16)*16);
+    if(!sizes.some(z=>z[0]===W&&z[1]===H)) sizes.push([W,H]);
   }
-  if(!conf) return null;
+  let conf=null,W=0,H=0,lastErr='';
+  outer: for(const [w,h] of sizes){
+    const bitrate=Math.round(w*h*30*bitsPerPx);
+    for(const codec of ['avc1.640028','avc1.4d0028','avc1.42e028','avc1.4d401f','avc1.42001f']){
+      for(const extra of [{framerate:30},{}]){
+        try{ const r=await VideoEncoder.isConfigSupported({codec,width:w,height:h,bitrate,avc:{format:'avc'},...extra}); if(r.supported){ conf=r.config; W=w; H=h; break outer; } }
+        catch(e){ lastErr=e.message||String(e); }
+      }
+    }
+  }
+  if(!conf) return {err:'이 폰의 인코더가 영상 설정을 거부했어요'+(lastErr?' ('+lastErr+')':'')};
   const target=new Mp4Muxer.ArrayBufferTarget();
   const muxer=new Mp4Muxer.Muxer({target,video:{codec:'avc',width:W,height:H},fastStart:'in-memory',firstTimestampBehavior:'offset'});
-  const e={lastTs:-1,n:0,err:null,closed:false};
+  const e={lastTs:-1,n:0,err:null,closed:false,W,H};
   const encoder=new VideoEncoder({output:(c,m)=>{ try{ muxer.addVideoChunk(c,m); }catch(x){ e.err=x; } },error:x=>{ e.err=x; }});
-  try{ encoder.configure(conf); }catch(x){ return null; }
+  try{ encoder.configure(conf); }catch(x){ return {err:'인코더 설정 실패: '+(x.message||x)}; }
   e.encode=(canvas,ts)=>{
     if(e.err||e.closed) return; ts=Math.round(ts); if(ts<=e.lastTs) return; e.lastTs=ts;
-    const vf=new VideoFrame(canvas,{timestamp:ts});
+    let vf; try{ vf=new VideoFrame(canvas,{timestamp:ts}); }catch(x){ e.err=x; return; }
     try{ encoder.encode(vf,{keyFrame:e.n%60===0}); }catch(x){ e.err=x; }
     vf.close(); e.n++;
     const q=encoder.encodeQueueSize;                   // let the encoder keep up instead of dropping frames
@@ -1637,10 +1649,11 @@ async function makeEncoder(W,H,bitsPerPx){
   e.finish=async()=>{
     if(e.closed) return null; e.closed=true;
     try{ await encoder.flush(); muxer.finalize(); encoder.close(); }catch(x){ e.err=e.err||x; }
-    return e.err||!e.n?null:new Blob([target.buffer],{type:'video/mp4'});
+    if(e.err||!e.n){ e.why=e.err?('인코딩 오류: '+(e.err.message||e.err)):'인코딩된 프레임이 없어요'; return null; }
+    return new Blob([target.buffer],{type:'video/mp4'});
   };
   e.close=()=>{ if(e.closed) return; e.closed=true; try{ encoder.close(); }catch(x){} };
-  return e;
+  return {enc:e};
 }
 function downloadBlob(blob,ext,lift){
   const url=URL.createObjectURL(blob), ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
@@ -1661,13 +1674,13 @@ const idb={
 };
 const CLIP_KEEP=40;
 const clipCanvas=document.createElement('canvas'), clipCtx=clipCanvas.getContext('2d');
-let clipEnc=null, clipLive=null, clipURL=null;
-const clipBusy=new Set(), clipMem=new Map();   // in this session only (never saved with the set record)
+let clipEnc=null, clipLive=null, clipURL=null, clipErr='';
+const clipBusy=new Set(), clipMem=new Map(), clipFail=new Map();   // in this session only (never saved with the set record)
 async function startClip(){
-  clipEnc=null;
-  const sc=Math.min(1,1920/Math.max(video.videoWidth,video.videoHeight));            // up to 1080p
-  clipCanvas.width=Math.round(video.videoWidth*sc/2)*2; clipCanvas.height=Math.round(video.videoHeight*sc/2)*2;
-  clipEnc=await makeEncoder(clipCanvas.width,clipCanvas.height,0.06);                 // ≈3.7 Mbps at 1080p
+  clipEnc=null; clipErr='';
+  const r=await makeEncoder(video.videoWidth,video.videoHeight,1920,0.06);             // up to 1080p, ≈3.7 Mbps
+  if(r.err){ clipErr=r.err; console.warn('[TATELIFT] clip:',r.err); }
+  else { clipEnc=r.enc; clipCanvas.width=r.enc.W; clipCanvas.height=r.enc.H; }
   clipLive={entry:{ex:LIFTS[curLift].label+(cfg.pause[curLift]?' ⏸':''),wt:weightVal?`${weightVal}${weightUnit}`:'',comp:segComp},seg};
 }
 function clipFrame(t){
@@ -1678,11 +1691,12 @@ function clipFrame(t){
   clipEnc.encode(clipCanvas,(t-trim.a)*1e6);
 }
 async function saveClip(entry){
-  const e=clipEnc; clipEnc=null; if(!e) return;
+  const e=clipEnc; clipEnc=null;
+  if(!e){ clipFail.set(entry.time,clipErr||'클립을 만들지 못했어요'); return; }
   clipBusy.add(entry.time);
   const blob=await e.finish();
   clipBusy.delete(entry.time);
-  if(!blob){ if(curSetData&&curSetData.entry===entry) showClip(entry); return; }
+  if(!blob){ clipFail.set(entry.time,e.why||'클립을 만들지 못했어요'); if(curSetData&&curSetData.entry===entry) showClip(entry); return; }
   try{
     await idb.put('clip:'+entry.time,blob); entry.clip=true; saveSets();
     try{ navigator.storage&&navigator.storage.persist&&navigator.storage.persist(); }catch(x){}
@@ -1699,7 +1713,11 @@ async function showClip(entry){
   if(clipBusy.has(entry.time)){ box.style.display='block'; v.style.display='none'; msg.innerHTML='<span class="spinner"></span>클립 만드는 중…'; return; }
   let blob=clipMem.get(entry.time)||null;
   if(!blob&&entry.clip){ try{ blob=await idb.get('clip:'+entry.time); }catch(e){} }
-  if(!blob){ box.style.display='none'; return; }
+  if(!blob){
+    box.style.display='block'; v.style.display='none';
+    msg.textContent='🎞 '+(clipFail.get(entry.time)||(entry.clip?'저장된 클립을 불러오지 못했어요 (브라우저 저장공간이 지워졌을 수 있어요)':'이 세트는 저장된 클립이 없어요 — 업데이트 전에 분석한 세트예요. 영상을 다시 올려 분석하면 생겨요.'));
+    return;
+  }
   if(!(curSetData&&curSetData.entry===entry)) return;
   box.style.display='block'; v.style.display='block'; msg.textContent='';
   clipURL=URL.createObjectURL(blob); v.src=clipURL; v.muted=true; v.loop=true; v.playsInline=true;
