@@ -64,7 +64,7 @@ Return ONLY one JSON object, no markdown, with exactly these keys:
  "reps": [{"n": number, "valid": boolean, "rpe": number, "note": string}],
  "failed": boolean, "fail_note": string,
  "sticking_point": string, "form_notes": [string], "tracking_issues": string, "summary": string}
-Write every string in Korean, short and practical (summary: 1-3 sentences). Use "" or [] when nothing to say.`;
+Write every string in Korean, short and practical. summary: ONE paragraph of about 3 short sentences (set RPE and why, sticking point, one cue). form_notes: at most 2 short items. Use "" or [] when nothing to say.`;
 
 const MAX_FRAMES = 16;
 const MAX_FRAME_CHARS = 400_000; // ~300 KB of base64 per image

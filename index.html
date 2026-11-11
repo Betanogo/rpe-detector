@@ -95,17 +95,18 @@ button{font-family:inherit;color:inherit;}
 .trim-wrap{flex:1;min-width:0;}
 .trim-times{display:flex;justify-content:space-between;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;}
 #trim-len{color:var(--yellow);}
-.trim-track{position:relative;height:48px;}
-.trim-track::before{content:'';position:absolute;left:0;right:0;top:27px;height:6px;background:var(--s3);border-radius:3px;}
-#trim-fill{position:absolute;top:27px;height:6px;background:var(--acc);border-radius:3px;opacity:.85;}
-#trim-track{touch-action:none;cursor:pointer;}
-#trim-head{position:absolute;top:0;bottom:0;width:0;pointer-events:none;z-index:3;}
-#trim-head b{position:absolute;left:-1px;top:12px;width:2px;height:32px;background:#fff;border-radius:1px;box-shadow:0 0 4px rgba(0,0,0,.7);}
-#trim-head i{position:absolute;left:-11px;top:0;width:22px;height:15px;border-radius:5px 5px 11px 11px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:auto;cursor:ew-resize;touch-action:none;}
-.trim-track input{position:absolute;left:0;top:14px;width:100%;height:32px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none;}
-.trim-track input::-webkit-slider-runnable-track{background:none;}
-.trim-track input::-webkit-slider-thumb{pointer-events:auto;-webkit-appearance:none;width:26px;height:26px;border-radius:8px;background:#fff;border:3px solid var(--acc);cursor:grab;}
-.trim-track input::-moz-range-thumb{pointer-events:auto;width:20px;height:20px;border-radius:7px;background:#fff;border:3px solid var(--acc);}
+#strip{position:relative;height:54px;margin:8px 16px 4px;touch-action:none;cursor:pointer;user-select:none;-webkit-user-select:none;}
+#thumbs{position:absolute;inset:0;display:flex;border-radius:7px;overflow:hidden;background:var(--s3);}
+#thumbs .th{flex:1;background-size:cover;background-position:center;border-right:1px solid rgba(0,0,0,.35);}
+#thumbs .th:last-child{border-right:none;}
+.shade{position:absolute;top:0;bottom:0;background:rgba(11,11,12,.74);pointer-events:none;}
+#shade-l{left:0;border-radius:7px 0 0 7px;} #shade-r{right:0;border-radius:0 7px 7px 0;}
+#sel{position:absolute;top:-3px;bottom:-3px;border-top:3px solid var(--yellow);border-bottom:3px solid var(--yellow);pointer-events:none;}
+.grip{position:absolute;top:-3px;bottom:-3px;width:16px;background:var(--yellow);pointer-events:auto;touch-action:none;}
+#grip-l{left:-16px;border-radius:7px 0 0 7px;} #grip-r{right:-16px;border-radius:0 7px 7px 0;}
+.grip i{position:absolute;left:6px;top:50%;width:4px;height:18px;margin-top:-9px;border-radius:2px;background:rgba(20,8,0,.75);}
+#phead{position:absolute;top:-7px;bottom:-7px;width:3px;margin-left:-1.5px;background:#fff;border-radius:2px;box-shadow:0 0 5px rgba(0,0,0,.9);pointer-events:none;}
+.strip-tip{font-size:10.5px;color:var(--text3);}
 .frame-step{display:flex;gap:4px;align-items:center;margin-top:4px;}
 .frame-step button{background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:11.5px;font-weight:600;padding:6px 9px;cursor:pointer;white-space:nowrap;}
 #head-time{font-size:11px;font-weight:700;color:#fff;min-width:44px;text-align:center;}
@@ -240,8 +241,13 @@ table.t td:first-child{color:var(--text2);}
       <button id="btn-preview" aria-label="Preview">▶</button>
       <div class="trim-wrap">
         <div class="trim-times"><span id="trim-s">0.0s</span><span id="trim-len">—</span><span id="trim-e">0.0s</span></div>
-        <div class="trim-track" id="trim-track"><div id="trim-fill"></div><input type="range" id="trim-a" min="0" max="1000" value="0" aria-label="start"/><input type="range" id="trim-b" min="0" max="1000" value="1000" aria-label="end"/><div id="trim-head"><b></b><i></i></div></div>
-        <div class="frame-step"><button id="fs-prev" aria-label="1 frame back">◀</button><span id="head-time">0.00s</span><button id="fs-next" aria-label="1 frame forward">▶</button><span class="grow"></span><button id="set-a">[ 여기서 시작</button><button id="set-b">여기서 끝 ]</button></div>
+        <div id="strip" aria-label="Trim">
+          <div id="thumbs"></div>
+          <div class="shade" id="shade-l"></div><div class="shade" id="shade-r"></div>
+          <div id="sel"><div class="grip" id="grip-l"><i></i></div><div class="grip" id="grip-r"><i></i></div></div>
+          <div id="phead"></div>
+        </div>
+        <div class="frame-step"><button id="fs-prev" aria-label="1 frame back">◀</button><span id="head-time">0.00s</span><button id="fs-next" aria-label="1 frame forward">▶</button><span class="grow"></span><span class="strip-tip">노란 틀 양 끝을 끌어서 자르기</span></div>
       </div>
     </div>
     <div class="lift-chips only-edit" id="lift-chips"></div>
@@ -281,7 +287,7 @@ table.t td:first-child{color:var(--text2);}
     <div class="sec-h"><h3>실제 체감 RPE는?</h3><span>트래커가 학습해요</span></div>
     <div class="chips" id="res-chips"></div>
     <div class="res-actions">
-      <button class="btn-main" id="res-export">🎬 오버레이 영상 저장 (MP4)</button>
+      <button class="btn-main" id="res-export">🎬 오버레이 영상 저장 (MP4 + GIF)</button>
       <button class="btn-ghost" id="res-replay">▶ 오버레이로 재생 (폰 화면 녹화용)</button>
       <button class="btn-ghost" id="res-redo">구간·플레이트 다시 고르기</button>
       <button class="btn-ghost" id="res-new">새 영상 올리기</button>
@@ -995,7 +1001,7 @@ async function openVideo(f){
   }catch(err){ toast(err.message,4000); goHome(); return; }
   overlay.width=video.videoWidth; overlay.height=video.videoHeight;
   setupTrim(); grabGray(); drawEditOverlay(); updateEditUI();
-  loadPose();
+  buildThumbs(fileURL); loadPose();
 }
 function goHome(){
   active=false; video.pause(); releaseWake(); mode='home';
@@ -1015,7 +1021,7 @@ function updateEditUI(){
   if(editing){
     if(!video.videoWidth) return;
     if(!video.paused) hint('재생 중… 탭하면 멈춰요');
-    else if(!atStart()) hint(tracker.ok?'플레이트는 시작 지점에서 골랐어요':'구간을 정한 뒤, 시작 지점에서 플레이트를 탭하세요','흰 막대를 잡고 움직이면 영상을 넘겨볼 수 있어요 · 화면을 탭하면 시작 지점으로');
+    else if(!atStart()) hint(tracker.ok?'플레이트는 시작 지점에서 골랐어요':'구간을 정한 뒤, 시작 화면에서 플레이트를 탭하세요','화면을 탭하면 시작 지점으로 돌아가요');
     else if(!tracker.ok) hint('시작 화면에서 바벨 플레이트를 탭하세요','원판 가운데를 탭 · 옆에서 찍은 영상 · 원판 전체가 보이게',true);
     else hint('플레이트 선택됨','원이 원판 테두리와 안 맞으면 − / + · 🔒 로 크기 고정');
   } else if(mode==='analyze') hint('');
@@ -1053,16 +1059,16 @@ $('#btn-pause').onclick=()=>{
 const trim={a:0,b:0};
 function setupTrim(){ trim.a=0; trim.b=video.duration||0; trimUI(); updateHead(0); }
 function trimUI(){
-  const d=video.duration||1;
+  const d=video.duration||1, A=trim.a/d*100, B=trim.b/d*100;
   $('#trim-s').textContent=trim.a.toFixed(2)+'s'; $('#trim-e').textContent=trim.b.toFixed(2)+'s';
   $('#trim-len').textContent=`${(trim.b-trim.a).toFixed(1)}초 분석`;
-  const f=$('#trim-fill'); f.style.left=(trim.a/d*100)+'%'; f.style.width=((trim.b-trim.a)/d*100)+'%';
-  $('#trim-a').value=trim.a/d*1000; $('#trim-b').value=trim.b/d*1000;
+  $('#shade-l').style.width=A+'%'; $('#shade-r').style.width=(100-B)+'%';
+  const sel=$('#sel'); sel.style.left=A+'%'; sel.style.width=(B-A)+'%';
 }
 const atStart=()=>Math.abs(video.currentTime-trim.a)<0.04;
 function dropPlate(){ if(tracker.ok){ tracker.ok=false; tapSnap=null; trail=[]; } }
 // scrubbing: seek as fast as the decoder allows, always ending on the last requested position
-let pendingSeek=null, scrubbing=false;
+let pendingSeek=null;
 function scrubTo(t){
   t=Math.max(0,Math.min(video.duration||0,t)); updateHead(t);
   if(video.seeking){ pendingSeek=t; return; }
@@ -1073,30 +1079,47 @@ video.addEventListener('seeked',()=>{
   if(mode==='edit'){ updateHead(video.currentTime); drawEditOverlay(); updateEditUI(); }
 });
 function drawEditOverlay(){ if(tracker.ok&&atStart()&&video.paused){ grabGray(); drawOverlay(null); } else octx.clearRect(0,0,overlay.width,overlay.height); }
-const trackEl=$('#trim-track');
-const fracX=e=>{const r=trackEl.getBoundingClientRect();return Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));};
-trackEl.addEventListener('pointerdown',e=>{
-  if(mode!=='edit'||e.target.tagName==='INPUT') return;
-  if(!video.paused) pausePlay();
-  scrubbing=true; try{trackEl.setPointerCapture(e.pointerId);}catch(x){}
-  scrubTo(fracX(e)*(video.duration||0)); e.preventDefault();
+// filmstrip: drag the yellow frame's ends to trim (like the phone gallery), drag anywhere else to scrub
+const strip=$('#strip'); let drag=null;
+const stripX=x=>{const r=strip.getBoundingClientRect();return Math.max(0,Math.min(1,(x-r.left)/r.width));};
+strip.addEventListener('pointerdown',e=>{
+  if(mode!=='edit') return; if(!video.paused) pausePlay();
+  const r=strip.getBoundingClientRect(), d=video.duration||1;
+  const ax=r.left+trim.a/d*r.width, bx=r.left+trim.b/d*r.width, x=e.clientX;
+  const da=Math.abs(x-(ax-8)), db=Math.abs(x-(bx+8));
+  if(Math.min(da,db)<26) drag={k:da<=db?'a':'b',off:(da<=db?ax:bx)-x};   // grabbed a grip
+  else { drag={k:'h'}; scrubTo(stripX(x)*d); }
+  try{strip.setPointerCapture(e.pointerId);}catch(x){} e.preventDefault();
 });
-trackEl.addEventListener('pointermove',e=>{ if(scrubbing) scrubTo(fracX(e)*(video.duration||0)); });
-['pointerup','pointercancel'].forEach(t=>trackEl.addEventListener(t,()=>{ scrubbing=false; }));
-// trim handles: dragging a handle shows that frame
-$('#trim-a').oninput=e=>{
-  if(mode!=='edit') return; if(!video.paused) pausePlay();
-  const d=video.duration||0; trim.a=Math.max(0,Math.min(+e.target.value/1000*d,trim.b-0.5));
-  trimUI(); dropPlate(); scrubTo(trim.a);
+strip.addEventListener('pointermove',e=>{
+  if(!drag) return; const d=video.duration||1;
+  if(drag.k==='h'){ scrubTo(stripX(e.clientX)*d); return; }
+  const t=stripX(e.clientX+drag.off)*d;
+  if(drag.k==='a'){ trim.a=Math.max(0,Math.min(t,trim.b-0.5)); trimUI(); dropPlate(); scrubTo(trim.a); }
+  else { trim.b=Math.min(d,Math.max(t,trim.a+0.5)); trimUI(); scrubTo(trim.b); }
+});
+const stripUp=()=>{
+  if(!drag) return; const k=drag.k; drag=null;
+  if(k==='a'||k==='b'){ scrubTo(trim.a); if(!tracker.ok) toast('시작 화면에서 플레이트를 탭하세요'); }   // back to the start frame to pick the plate
 };
-$('#trim-b').oninput=e=>{
-  if(mode!=='edit') return; if(!video.paused) pausePlay();
-  const d=video.duration||0; trim.b=Math.min(d,Math.max(+e.target.value/1000*d,trim.a+0.5));
-  trimUI(); scrubTo(trim.b);
-};
-// set start / end at the playhead
-$('#set-a').onclick=()=>{ if(mode!=='edit') return; pausePlay(); const t=video.currentTime; if(t>trim.b-0.5){toast('끝 지점보다 0.5초 이상 앞이어야 해요');return;} trim.a=t; trimUI(); dropPlate(); drawEditOverlay(); updateEditUI(); toast('시작 지점 설정 — 이 화면에서 플레이트를 탭하세요'); };
-$('#set-b').onclick=()=>{ if(mode!=='edit') return; pausePlay(); const t=video.currentTime; if(t<trim.a+0.5){toast('시작 지점보다 0.5초 이상 뒤여야 해요');return;} trim.b=t; trimUI(); updateEditUI(); toast('끝 지점 설정'); };
+strip.addEventListener('pointerup',stripUp); strip.addEventListener('pointercancel',stripUp);
+// thumbnails for the filmstrip, made with a second (hidden) video so the editor isn't disturbed
+let thumbTok=0;
+async function buildThumbs(url){
+  const tok=++thumbTok, box=$('#thumbs'), n=10; box.innerHTML='';
+  const cells=[]; for(let i=0;i<n;i++){ const c=document.createElement('div'); c.className='th'; box.appendChild(c); cells.push(c); }
+  const v=document.createElement('video'); v.muted=true; v.playsInline=true; v.preload='auto'; v.src=url;
+  try{ await new Promise((res,rej)=>{v.onloadeddata=res; v.onerror=rej; setTimeout(res,5000);}); }catch(e){ return; }
+  if(!v.videoWidth) return;
+  const c=document.createElement('canvas'); c.height=108; c.width=Math.max(40,Math.round(108*v.videoWidth/v.videoHeight)); const cx=c.getContext('2d');
+  for(let i=0;i<n;i++){
+    if(tok!==thumbTok) break;
+    v.currentTime=(i+0.5)/n*v.duration;
+    await new Promise(r=>{v.onseeked=r; setTimeout(r,1500);});
+    try{ cx.drawImage(v,0,0,c.width,c.height); cells[i].style.backgroundImage=`url(${c.toDataURL('image/jpeg',0.6)})`; }catch(e){}
+  }
+  v.removeAttribute('src'); v.load();
+}
 // one frame back / forward at the playhead
 const FRAME=1/30;
 $('#fs-prev').onclick=()=>{ if(mode!=='edit') return; pausePlay(); scrubTo(video.currentTime-FRAME); };
@@ -1115,7 +1138,7 @@ function pausePlay(){
   $('#btn-preview').textContent='▶'; updateHead(video.currentTime); drawEditOverlay(); updateEditUI();
 }
 function stopPreview(){ pausePlay(); }
-function updateHead(t){ const d=video.duration||1; $('#trim-head').style.left=(t/d*100)+'%'; $('#head-time').textContent=t.toFixed(2)+'s'; }
+function updateHead(t){ const d=video.duration||1; $('#phead').style.left=(t/d*100)+'%'; $('#head-time').textContent=t.toFixed(2)+'s'; }
 
 // ── Plate selection ──────────────────────────────────────
 $('#stage').addEventListener('click',ev=>{
@@ -1498,7 +1521,7 @@ async function runAI(d){
     series,
     pauseMode:!!entry.pause,
     personalCalibration:(calib[entry.ckey||entry.lift]||[]).slice(-12).map(p=>({slowestRepRomNormalisedVelocity:p.v,reportedRpe:p.rpe})),
-    note:(entry.comp?'COMP MODE: judge each rep as a referee from the frames (squat: top of thigh at hip below top of knee; bench: motionless pause on chest; deadlift: held at lockout before lowering, no hitching). Tracker checks: reps[].comp. Verdicts in form_notes as "Rep n: ...". ':'')+'vAdj=mcv*sqrt('+LIFTS[entry.lift].refROM+'/rom).',
+    note:'STYLE: summary = ONE Korean paragraph of about 3 short sentences (RPE + why, sticking point, one cue). form_notes max 2, each under 15 words. '+(entry.comp?'COMP: referee each rep from frames (SQ thigh top at hip below knee top; BP still pause on chest; DL hold lockout before lowering). Tracker checks in reps[].comp; verdicts in form_notes as "Rep n: ...".':''),
     frames:picks.map(p=>({t:+p.f.t.toFixed(2),label:p.label,data:p.f.data})),
   };
   try{
@@ -1533,13 +1556,19 @@ function showAI(entry,o,replay){
       h+=`<div style="color:var(--yellow);margin-bottom:6px">AI 판정: 실제 렙 ${nValid}개 — 트래커가 센 ${nTrk}개 중 Rep ${bad.join(', ')}은 실제 렙이 아니에요.</div>`;
     }
   }
-  if(o.failed===true||(o.failed===false&&curSetData&&curSetData.fails.length)) h+=`<div style="color:${o.failed?'var(--danger)':'var(--teal)'};margin-bottom:6px">${o.failed?'✕ AI 판정: 실패 렙':'AI 판정: 실패 아님'}${o.fail_note?' — '+escapeHtml(o.fail_note):''}</div>`;
-  if(o.summary) h+=`<div>${escapeHtml(o.summary)}</div>`;
-  if(Array.isArray(o.reps)&&o.reps.length) h+=`<div class="muted" style="margin-top:6px">${o.reps.map(r=>`Rep ${r.n}: ${r.valid===false?'✕ 무효':'RPE '+r.rpe}${r.note?' — '+escapeHtml(r.note):''}`).join('<br>')}</div>`;
-  if(o.sticking_point) h+=`<div style="margin-top:6px"><b>스티킹:</b> ${escapeHtml(o.sticking_point)}</div>`;
-  if(Array.isArray(o.form_notes)&&o.form_notes.length) h+=`<ul style="margin-top:6px">${o.form_notes.map(n=>`<li>${escapeHtml(n)}</li>`).join('')}</ul>`;
-  if(o.tracking_issues) h+=`<div class="muted" style="margin-top:6px">추적: ${escapeHtml(o.tracking_issues)}</div>`;
-  if(o.confidence) h+=`<div class="muted" style="margin-top:6px">신뢰도: ${escapeHtml(o.confidence)}${o.rir!=null?' · RIR '+o.rir:''}</div>`;
+  // one short paragraph: the summary (about 3 sentences); everything else folded under 자세히
+  const sents=String(o.summary||'').trim().split(/(?<=[.!?。])\s+/).filter(Boolean);   // "8.5" stays one number
+  const para=sents.slice(0,3).join(' ').replace(/\s+/g,' ').trim();
+  const flag=o.failed===true?'✕ 실패 렙. ':(o.failed===false&&curSetData&&curSetData.fails.length?'실패 아님. ':'');
+  if(para||flag) h+=`<div>${escapeHtml(flag+para)}</div>`;
+  let more='';
+  if(o.fail_note) more+=`<div>${escapeHtml(o.fail_note)}</div>`;
+  if(o.sticking_point) more+=`<div><b>스티킹:</b> ${escapeHtml(o.sticking_point)}</div>`;
+  if(Array.isArray(o.form_notes)&&o.form_notes.length) more+=`<div>${o.form_notes.map(n=>'· '+escapeHtml(n)).join('<br>')}</div>`;
+  if(Array.isArray(o.reps)&&o.reps.length) more+=`<div>${o.reps.map(r=>`Rep ${r.n}: ${r.valid===false?'✕ 무효':'RPE '+r.rpe}${r.note?' — '+escapeHtml(r.note):''}`).join('<br>')}</div>`;
+  if(o.tracking_issues) more+=`<div>추적: ${escapeHtml(o.tracking_issues)}</div>`;
+  if(o.confidence) more+=`<div>신뢰도: ${escapeHtml(o.confidence)}${o.rir!=null?' · RIR '+o.rir:''}</div>`;
+  if(more) h+=`<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">자세히</summary><div class="muted" style="margin-top:6px;display:flex;flex-direction:column;gap:6px">${more}</div></details>`;
   $('#res-ai-box').innerHTML=h||'<span class="muted">결과 없음</span>';
   if(!replay) saveSets();
   [...$('#res-chips').children].forEach(c=>{ if(+c.textContent===Math.round((o.set_rpe||0)*2)/2) c.style.borderColor='var(--teal)'; });
@@ -1588,7 +1617,6 @@ async function finishEncode(){
   try{ await e.encoder.flush(); e.muxer.finalize(); e.encoder.close(); }catch(x){ e.err=e.err||x; }
   if(e.err||!e.n){ toast('영상 저장 실패: '+((e.err&&e.err.message)||'프레임 없음'),4000); return; }
   downloadBlob(new Blob([e.target.buffer],{type:'video/mp4'}),'mp4');
-  toast('영상 저장 완료 — 다운로드 폴더를 확인하세요',3500);
 }
 function downloadBlob(blob,ext){
   const url=URL.createObjectURL(blob), ts=new Date().toISOString().slice(0,16).replace(/[T:]/g,'-');
@@ -1596,6 +1624,45 @@ function downloadBlob(blob,ext){
   const a=document.createElement('a'); a.href=url; a.download=`tatelift_${lbl}_${ts}.${ext}`;
   a.style.cssText='position:fixed;opacity:0;'; document.body.appendChild(a);
   requestAnimationFrame(()=>{a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url);},30000);});
+}
+// High-quality GIF next to the MP4: up to 720 px on the long side (portrait 406×720), 15 fps,
+// its own 256-colour palette per frame. Encoded in a worker so the MP4 export keeps its pace.
+const GIF_URL=window.__GIF_URL||'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
+const GIF_FPS=15, GIF_MAX=720;
+let gifJob=null;
+function startGif(){
+  try{
+    const src=`import {GIFEncoder,quantize,applyPalette} from '${GIF_URL}';
+      const gif=GIFEncoder(); let prev=null;
+      const put=(f,delay)=>{ const pal=quantize(f.px,256,{format:'rgb565'}); gif.writeFrame(applyPalette(f.px,pal,'rgb565'),f.w,f.h,{palette:pal,delay}); };
+      onmessage=e=>{ const m=e.data;
+        if(m.type==='frame'){ const f={px:new Uint8ClampedArray(m.buf),w:m.w,h:m.h,t:m.t}; if(prev) put(prev,Math.max(20,Math.round((f.t-prev.t)*1000))); prev=f; postMessage({type:'ack'}); }
+        else if(m.type==='end'){ if(prev) put(prev,Math.round(1000/${GIF_FPS})); gif.finish(); const b=gif.bytes(); postMessage({type:'done',buf:b.buffer},[b.buffer]); } };
+      postMessage({type:'ready'});`;
+    const w=new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})),{type:'module'});
+    const sc=Math.min(1,GIF_MAX/Math.max(video.videoWidth,video.videoHeight));
+    const job={w,pending:0,lastT:-1,n:0,failed:false,cw:Math.round(video.videoWidth*sc/2)*2,ch:Math.round(video.videoHeight*sc/2)*2,done:null};
+    job.c=document.createElement('canvas'); job.c.width=job.cw; job.c.height=job.ch; job.ctx=job.c.getContext('2d',{willReadFrequently:true});
+    w.onmessage=e=>{ const m=e.data; if(m.type==='ack') job.pending--; else if(m.type==='done'&&job.done) job.done(m.buf); };
+    w.onerror=()=>{ job.failed=true; if(job.done) job.done(null); };
+    gifJob=job;
+  }catch(e){ gifJob=null; }
+}
+function gifFrame(t){
+  const j=gifJob; if(!j||j.failed) return;
+  if(j.lastT>=0&&t-j.lastT<1/GIF_FPS-0.004) return;
+  if(j.pending>4){ if(video.playbackRate>0.25) video.playbackRate=Math.max(0.25,video.playbackRate*0.8); return; }   // let the GIF encoder keep up
+  j.lastT=t; j.ctx.drawImage(recCanvas,0,0,j.cw,j.ch);
+  const px=j.ctx.getImageData(0,0,j.cw,j.ch).data;
+  j.w.postMessage({type:'frame',buf:px.buffer,w:j.cw,h:j.ch,t},[px.buffer]); j.pending++; j.n++;
+}
+function finishGif(){
+  const j=gifJob; gifJob=null; if(!j||j.failed||!j.n) return Promise.resolve(false);
+  return new Promise(res=>{
+    j.done=buf=>{ j.done=null; j.w.terminate(); if(!buf){res(false);return;} setTimeout(()=>downloadBlob(new Blob([buf],{type:'image/gif'}),'gif'),800); res(true); };
+    j.w.postMessage({type:'end'});
+    setTimeout(()=>{ if(j.done){ j.done=null; j.w.terminate(); res(false);} },120000);
+  });
 }
 $('#res-export').onclick=async()=>{
   if(!fileLog.length||mode==='export'||!curSetData||!curSetData.live) return;
@@ -1606,6 +1673,7 @@ $('#res-export').onclick=async()=>{
   const W=Math.round(video.videoWidth*sc/2)*2,H=Math.round(video.videoHeight*sc/2)*2;
   recCanvas.width=W; recCanvas.height=H;
   expUseEnc=await startEncode(W,H);
+  startGif();
   if(!expUseEnc){ startRec(); if(!isRecording){ toast('이 브라우저는 영상 저장을 지원하지 않아요 — ▶ 오버레이로 재생 후 화면 녹화를 쓰세요',4500); openResult(expData); return; } }
   video.play().catch(()=>{});
 };
@@ -1626,13 +1694,17 @@ function exportFrame(t){
   drawLogged(t);
   expT=t-t0; recFrame();
   if(expUseEnc) encodeFrame(t);
-  progress((t-trim.a)/Math.max(0.1,trim.b-trim.a),expUseEnc?`MP4 · ${video.playbackRate<0.99?video.playbackRate.toFixed(2)+'×':'1×'}`:'녹화 중');
+  gifFrame(t);
+  progress((t-trim.a)/Math.max(0.1,trim.b-trim.a),(expUseEnc?'MP4':'녹화')+(gifJob?' + GIF':'')+` · ${video.playbackRate<0.99?video.playbackRate.toFixed(2)+'×':'1×'}`);
 }
 async function finishExport(){
   if(mode!=='export') return;
   mode='export-done'; expT=null; video.pause();
-  if(expUseEnc){ progress(1,'파일 만드는 중…'); await finishEncode(); }
-  else { stopRec(); toast('영상 저장 완료 — 다운로드 폴더를 확인하세요',3500); }
+  if(expUseEnc){ progress(1,'MP4 만드는 중…'); await finishEncode(); }
+  else { stopRec(); }
+  progress(1,'GIF 만드는 중…');
+  const gifOk=await finishGif();
+  toast(gifOk?'MP4 + GIF 저장 완료 — 다운로드 폴더를 확인하세요':'영상 저장 완료 — 다운로드 폴더를 확인하세요',4000);
   video.playbackRate=1; openResult(expData);
 }
 // full-screen playback with the overlay, for the phone's own screen recorder
