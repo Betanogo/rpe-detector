@@ -313,6 +313,7 @@ table.t td:first-child{color:var(--text2);}
       <input class="txt-input" id="s-worker" placeholder="https://tatelift-ai.xxxx.workers.dev" autocomplete="off" spellcheck="false"/>
       <button class="small-btn" id="s-test" style="margin-top:8px;width:100%">연결 테스트</button>
     </div>
+    <div class="setting-row"><div><div class="setting-label">AI RPE 보정</div><div class="setting-desc">AI가 말하는 RPE를 이만큼 조정 (새 분석부터 적용)</div></div><select class="num-input" id="s-aioff" style="width:auto;padding-right:6px"><option value="-1">−1.0</option><option value="-0.5">−0.5</option><option value="0">0</option><option value="0.5">+0.5</option></select></div>
     <div class="setting-row"><div><div class="setting-label">관절 추적</div><div class="setting-desc">원판이 가려지면 손목·어깨로 바 위치 보완</div></div><label class="toggle"><input type="checkbox" id="s-pose"/><span class="toggle-slider"></span></label></div>
     <div class="setting-row"><div><div class="setting-label">플레이트 지름</div><div class="setting-desc">탭한 원판 지름 (25/20kg 범퍼·IPF = 45cm)</div></div><span><input type="number" class="num-input" id="s-plate" value="45" min="20" max="50" step="0.5"/> cm</span></div>
     <div class="setting-row"><div><div class="setting-label">디버그 표시</div><div class="setting-desc">추적 점수·배경 지점 표시</div></div><label class="toggle"><input type="checkbox" id="s-debug"/><span class="toggle-slider"></span></label></div>
@@ -348,7 +349,7 @@ const store={
   get(k,d){try{const v=localStorage.getItem('tl2_'+k);return v===null?d:JSON.parse(v);}catch(e){return d;}},
   set(k,v){try{localStorage.setItem('tl2_'+k,JSON.stringify(v));}catch(e){}}
 };
-const cfg=Object.assign({ai:false,worker:'',plate:45,rec:true,stopSec:7,wake:true,debug:false,pose:true,pause:{}},store.get('cfg',{}));
+const cfg=Object.assign({ai:false,worker:'',plate:45,rec:true,stopSec:7,wake:true,debug:false,pose:true,pause:{},aiOffset:-0.5},store.get('cfg',{}));
 if(typeof cfg.pause!=='object'||!cfg.pause) cfg.pause={};
 let calib=store.get('calib',{}); // {BP:[{v,rpe,t}],...}
 
@@ -1548,7 +1549,7 @@ async function runAI(d){
     series,
     pauseMode:!!entry.pause,
     personalCalibration:(calib[entry.ckey||entry.lift]||[]).slice(-12).map(p=>({slowestRepRomNormalisedVelocity:p.v,reportedRpe:p.rpe})),
-    note:'STYLE: summary = ONE Korean paragraph of about 3 short sentences (RPE + why, sticking point, one cue). form_notes max 2, each under 15 words. '+(entry.comp?'COMP: referee each rep from frames (SQ thigh top at hip below knee top; BP still pause on chest; DL hold lockout before lowering). Tracker checks in reps[].comp; verdicts in form_notes as "Rep n: ...".':''),
+    note:aiNote(entry),
     frames:picks.map(p=>({t:+p.f.t.toFixed(2),label:p.label,data:p.f.data})),
   };
   try{
@@ -1562,6 +1563,14 @@ async function runAI(d){
   }catch(e){
     if(curSetData&&curSetData.entry===entry){ $('#res-ai').textContent='—'; $('#res-ai-box').innerHTML=`<span class="muted">AI 분석 실패: ${escapeHtml(e.message)}</span>`; }
   }
+}
+// kept under 300 chars: the worker passes only the first 300 on to Claude
+function aiNote(entry){
+  const off=+(cfg.aiOffset??-0.5)||0;
+  const adj=off?`RPE ${Math.abs(off)} ${off<0?'lower':'higher'} than your usual read (his calibration) in set_rpe, rep rpe, rir, summary. `:'';
+  const sty='Summary: 1 Korean paragraph, ~3 sentences (RPE+why, sticking pt, 1 cue). form_notes ≤2. ';
+  const comp=entry.comp?'COMP: judge reps from frames (SQ hip below knee; BP still pause; DL lockout hold), see reps[].comp; verdicts "Rep n: ...".':'';
+  return adj+sty+comp;
 }
 const curLiftName=k=>({BP:'bench press',SQ:'back squat',DL:'deadlift',OHP:'overhead press',RDL:'romanian deadlift'})[k];
 function parseAI(text){
@@ -1855,7 +1864,7 @@ function updateCalibInfo(){
 }
 function applyCfgToUI(){
   $('#s-ai').checked=cfg.ai; $('#s-worker').value=cfg.worker; $('#s-plate').value=cfg.plate;
-  $('#s-debug').checked=cfg.debug; $('#s-pose').checked=cfg.pose;
+  $('#s-debug').checked=cfg.debug; $('#s-pose').checked=cfg.pose; $('#s-aioff').value=String(cfg.aiOffset??-0.5);
   $('#debug-box').style.display=cfg.debug?'block':'none'; updateCalibInfo();
 }
 const saveCfg=()=>{store.set('cfg',cfg);$('#debug-box').style.display=cfg.debug?'block':'none';};
@@ -1867,6 +1876,7 @@ $('#s-ai').onchange=e=>{cfg.ai=e.target.checked;saveCfg();};
 $('#s-worker').onchange=e=>{cfg.worker=e.target.value.trim();saveCfg();};
 $('#s-plate').onchange=e=>{cfg.plate=Math.max(20,Math.min(50,+e.target.value||45));saveCfg();};
 $('#s-debug').onchange=e=>{cfg.debug=e.target.checked;saveCfg();};
+$('#s-aioff').onchange=e=>{cfg.aiOffset=+e.target.value||0;saveCfg();};
 $('#s-pose').onchange=e=>{cfg.pose=e.target.checked;saveCfg();if(cfg.pose)loadPose();else POSE.cur=null;};
 $('#s-calib-reset').onclick=()=>{ if(!confirm('개인 보정 데이터를 모두 지울까요?')) return; calib={};store.set('calib',calib);updateCalibInfo();toast('보정 데이터 초기화');};
 $('#s-test').onclick=async()=>{

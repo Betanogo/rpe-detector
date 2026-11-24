@@ -116,7 +116,7 @@ export default {
       personalCalibration: Array.isArray(body.personalCalibration) ? body.personalCalibration.slice(0, 20) : [],
       series: Array.isArray(body.series) ? body.series : [],
       pauseMode: !!body.pauseMode,
-      note: body.note ? String(body.note).slice(0, 300) : '',
+      note: body.note ? String(body.note).slice(0, 600) : '',
     };
     let text = JSON.stringify(data);
     while (text.length > MAX_DATA_CHARS && (data.series.length > 50 || data.joints.length > 30)) {   // thin if too long
