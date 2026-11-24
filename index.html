@@ -30,6 +30,8 @@ button{font-family:inherit;color:inherit;}
 .logo{font-weight:800;font-size:18px;letter-spacing:.04em;}
 .logo b{color:var(--acc);}
 .grow{flex:1;}
+.credit-chip{height:40px;padding:0 12px;margin-right:8px;border-radius:12px;border:1px solid var(--border);background:var(--s1);color:var(--text2);font:600 13px/1 inherit;font-variant-numeric:tabular-nums;cursor:pointer;display:none;align-items:center;gap:6px;flex-shrink:0;}
+.credit-chip.low{color:#ff9f43;border-color:#ff9f4366;}.credit-chip.out{color:#ff5c5c;border-color:#ff5c5c66;}
 .icon-btn{width:40px;height:40px;border-radius:12px;border:1px solid var(--border);background:var(--s1);color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .bar-title{font-size:15px;font-weight:700;}
 .bar-sub{font-size:11px;color:var(--text3);margin-top:1px;max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -202,7 +204,7 @@ table.t td:first-child{color:var(--text2);}
 
 <!-- ═════════ HOME / DASHBOARD ═════════ -->
 <section class="view on" id="view-home">
-  <div class="bar"><div class="logo">TATE<b>LIFT</b></div><div class="grow"></div><button class="icon-btn" id="btn-settings" aria-label="Settings">⚙</button></div>
+  <div class="bar"><div class="logo">TATE<b>LIFT</b></div><div class="grow"></div><button class="credit-chip" id="credit-chip" aria-label="Claude 크레딧"></button><button class="icon-btn" id="btn-settings" aria-label="Settings">⚙</button></div>
   <div class="scroll">
     <div class="hero" id="hero">
       <button id="btn-upload" aria-label="영상 올리기">
@@ -313,6 +315,7 @@ table.t td:first-child{color:var(--text2);}
       <input class="txt-input" id="s-worker" placeholder="https://tatelift-ai.xxxx.workers.dev" autocomplete="off" spellcheck="false"/>
       <button class="small-btn" id="s-test" style="margin-top:8px;width:100%">연결 테스트</button>
     </div>
+    <div class="setting-row"><div><div class="setting-label">Claude 크레딧 잔액</div><div class="setting-desc" id="s-credit-info">Anthropic 콘솔 → 결제(Billing)의 잔액을 입력하면 그 뒤로 쓴 만큼 빼서 상단에 보여줘요</div></div><span>$ <input type="number" class="num-input" id="s-credit" min="0" step="0.01" placeholder="5.00" style="width:76px"/></span></div>
     <div class="setting-row"><div><div class="setting-label">AI RPE 보정</div><div class="setting-desc">AI가 말하는 RPE를 이만큼 조정 (새 분석부터 적용)</div></div><select class="num-input" id="s-aioff" style="width:auto;padding-right:6px"><option value="-1">−1.0</option><option value="-0.5">−0.5</option><option value="0">0</option><option value="0.5">+0.5</option></select></div>
     <div class="setting-row"><div><div class="setting-label">관절 추적</div><div class="setting-desc">원판이 가려지면 손목·어깨로 바 위치 보완</div></div><label class="toggle"><input type="checkbox" id="s-pose"/><span class="toggle-slider"></span></label></div>
     <div class="setting-row"><div><div class="setting-label">플레이트 지름</div><div class="setting-desc">탭한 원판 지름 (25/20kg 범퍼·IPF = 45cm)</div></div><span><input type="number" class="num-input" id="s-plate" value="45" min="20" max="50" step="0.5"/> cm</span></div>
@@ -1557,13 +1560,40 @@ async function runAI(d){
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
     const out=parseAI(j.text);
+    entry.aiCost=chargeCredit(j.usage);
     entry.aiOut=out; saveSets();
     if(curSetData&&curSetData.entry===entry&&mode==='result') showAI(entry,out);
     else if(typeof out.set_rpe==='number'){ entry.ai=out.set_rpe; saveSets(); }
   }catch(e){
+    if(/credit balance/i.test(e.message)){ cfg.credit=Object.assign(cfg.credit||{},{out:true}); saveCfg(); renderCredit(); e.message='Claude 크레딧이 다 떨어졌어요 — Anthropic 콘솔 결제에서 충전하세요'; }
     if(curSetData&&curSetData.entry===entry){ $('#res-ai').textContent='—'; $('#res-ai-box').innerHTML=`<span class="muted">AI 분석 실패: ${escapeHtml(e.message)}</span>`; }
   }
 }
+// ── Claude credit: the API has no balance lookup, so the user enters the console balance once
+// and every analysis subtracts its real cost (token counts the worker returns × Sonnet 5.5 price)
+const PRICE={in:2,out:10,cacheW:2.5,cacheR:0.2};                 // USD per million tokens
+function chargeCredit(u){
+  if(!u) return null;
+  const c=((u.input_tokens||0)*PRICE.in+(u.output_tokens||0)*PRICE.out+(u.cache_creation_input_tokens||0)*PRICE.cacheW+(u.cache_read_input_tokens||0)*PRICE.cacheR)/1e6;
+  const cr=cfg.credit=cfg.credit||{}; cr.spent=(cr.spent||0)+c; cr.n=(cr.n||0)+1; cr.out=false; saveCfg(); renderCredit();
+  return +c.toFixed(4);
+}
+function creditLeft(){ const cr=cfg.credit; return cr&&cr.base!=null?cr.base-(cr.spent||0):null; }
+function renderCredit(){
+  const el=$('#credit-chip'); if(!el) return;
+  const cr=cfg.credit||{}, left=creditLeft();
+  if(!cfg.ai){ el.style.display='none'; return; }
+  el.style.display='flex'; el.classList.toggle('out',!!cr.out||(left!=null&&left<=0.05)); el.classList.toggle('low',!cr.out&&left!=null&&left>0.05&&left<1);
+  el.textContent=cr.out?'💳 충전 필요':left==null?'💳 잔액 입력':`💳 $${Math.max(0,left).toFixed(2)}`;
+  const per=cr.n?cr.spent/cr.n:0.03;
+  el.title=left==null?'':`약 ${Math.floor(Math.max(0,left)/per)}세트 분석 가능`;
+}
+function creditInfo(){
+  const cr=cfg.credit||{}, left=creditLeft(); if(left==null) return 'Anthropic 콘솔 → 결제(Billing)의 잔액을 입력하면 그 뒤로 쓴 만큼 빼서 상단에 보여줘요';
+  const per=cr.n?cr.spent/cr.n:0.03;
+  return `입력 후 ${cr.n||0}세트 · $${(cr.spent||0).toFixed(3)} 사용 → 약 $${Math.max(0,left).toFixed(2)} 남음 (세트당 ~${(per*100).toFixed(1)}¢, 약 ${Math.floor(Math.max(0,left)/per)}세트)`;
+}
+$('#credit-chip').onclick=()=>{ $('#btn-settings').click(); setTimeout(()=>$('#s-credit').focus(),250); };
 // kept under 300 chars: the worker passes only the first 300 on to Claude
 function aiNote(entry){
   const off=+(cfg.aiOffset??-0.5)||0;
@@ -1603,6 +1633,7 @@ function showAI(entry,o,replay){
   if(Array.isArray(o.form_notes)&&o.form_notes.length) more+=`<div>${o.form_notes.map(n=>'· '+escapeHtml(n)).join('<br>')}</div>`;
   if(Array.isArray(o.reps)&&o.reps.length) more+=`<div>${o.reps.map(r=>`Rep ${r.n}: ${r.valid===false?'✕ 무효':'RPE '+r.rpe}${r.note?' — '+escapeHtml(r.note):''}`).join('<br>')}</div>`;
   if(o.tracking_issues) more+=`<div>추적: ${escapeHtml(o.tracking_issues)}</div>`;
+  if(entry.aiCost!=null) more+=`<div>이번 분석 비용: ${(entry.aiCost*100).toFixed(1)}¢</div>`;
   if(o.confidence) more+=`<div>신뢰도: ${escapeHtml(o.confidence)}${o.rir!=null?' · RIR '+o.rir:''}</div>`;
   if(more) h+=`<details style="margin-top:8px"><summary class="muted" style="cursor:pointer">자세히</summary><div class="muted" style="margin-top:6px;display:flex;flex-direction:column;gap:6px">${more}</div></details>`;
   $('#res-ai-box').innerHTML=h||'<span class="muted">결과 없음</span>';
@@ -1865,6 +1896,7 @@ function updateCalibInfo(){
 function applyCfgToUI(){
   $('#s-ai').checked=cfg.ai; $('#s-worker').value=cfg.worker; $('#s-plate').value=cfg.plate;
   $('#s-debug').checked=cfg.debug; $('#s-pose').checked=cfg.pose; $('#s-aioff').value=String(cfg.aiOffset??-0.5);
+  { const l=creditLeft(); $('#s-credit').value=l==null?'':Math.max(0,l).toFixed(2); $('#s-credit-info').textContent=creditInfo(); }
   $('#debug-box').style.display=cfg.debug?'block':'none'; updateCalibInfo();
 }
 const saveCfg=()=>{store.set('cfg',cfg);$('#debug-box').style.display=cfg.debug?'block':'none';};
@@ -1872,10 +1904,11 @@ $('#btn-settings').onclick=()=>{applyCfgToUI();$('#settings-bg').classList.add('
 const closeSettings=()=>{ if(history.state&&history.state.v==='settings') history.back(); else { $('#settings-bg').classList.remove('open'); renderHome(); } };
 $('#settings-close').onclick=closeSettings;
 $('#settings-bg').addEventListener('click',e=>{if(e.target.id==='settings-bg') closeSettings();});
-$('#s-ai').onchange=e=>{cfg.ai=e.target.checked;saveCfg();};
+$('#s-ai').onchange=e=>{cfg.ai=e.target.checked;saveCfg();renderCredit();};
 $('#s-worker').onchange=e=>{cfg.worker=e.target.value.trim();saveCfg();};
 $('#s-plate').onchange=e=>{cfg.plate=Math.max(20,Math.min(50,+e.target.value||45));saveCfg();};
 $('#s-debug').onchange=e=>{cfg.debug=e.target.checked;saveCfg();};
+$('#s-credit').onchange=e=>{ const v=e.target.value.trim(), l=creditLeft(); if(v!==''&&l!=null&&(Math.abs(+v-Math.max(0,l))<0.005||Math.abs(+v-cfg.credit.base)<0.005)) return; cfg.credit=v===''?{}:{base:Math.max(0,+v||0),spent:0,n:0,at:Date.now()}; saveCfg(); renderCredit(); $('#s-credit-info').textContent=creditInfo(); };
 $('#s-aioff').onchange=e=>{cfg.aiOffset=+e.target.value||0;saveCfg();};
 $('#s-pose').onchange=e=>{cfg.pose=e.target.checked;saveCfg();if(cfg.pose)loadPose();else POSE.cur=null;};
 $('#s-calib-reset').onclick=()=>{ if(!confirm('개인 보정 데이터를 모두 지울까요?')) return; calib={};store.set('calib',calib);updateCalibInfo();toast('보정 데이터 초기화');};
@@ -1890,7 +1923,7 @@ function updateTargetUI(){}   // pose loader calls this; nothing to show on the 
 
 // ── Boot ─────────────────────────────────────────────────
 if(!history.state||history.state.v!=='home') history.replaceState({v:'home'},'');
-applyCfgToUI(); renderLiftChips(); updateUnitUI(); updatePauseUI(); updateCompUI(); updateLockUI(); renderHome();
+applyCfgToUI(); renderLiftChips(); updateUnitUI(); updatePauseUI(); updateCompUI(); updateLockUI(); renderHome(); renderCredit();
 scheduleFrame();
 </script>
 <script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
